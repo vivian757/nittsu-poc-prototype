@@ -4,6 +4,8 @@ const check = (label, status = '正常') => ({ label, kind: 'check', status });
 export const CHECKLIST_DRIVERS = [
   '陳志明', '林建宏', '王俊傑', '張育誠', '黃柏勳', '劉冠廷',
   '李承翰', '吳宗穎', '蔡明哲', '鄭宇翔', '郭俊宏', '彭子軒',
+  '周柏廷', '許家豪', '高志偉', '林冠宇', '陳建宏', '黃俊傑',
+  '張家維', '吳柏翰', '李宗翰', '劉志遠', '王建成', '趙明哲',
 ];
 
 export const CHECKLIST_TEMPLATE = [
@@ -11,7 +13,6 @@ export const CHECKLIST_TEMPLATE = [
     title: '基本資料',
     items: [
       value('客戶', '台灣日通物流股份有限公司'),
-      value('作業班別', '上班點檢'),
       value('車號', 'NXA-1023'),
       value('日期', '2026/08/12', { readonly: true }),
     ],
@@ -50,21 +51,44 @@ export const CHECKLIST_TEMPLATE = [
   },
 ];
 
+const abnormalTargets = [
+  [1, 0], [1, 2], [1, 5], [1, 6], [1, 7],
+  [2, 0], [2, 1], [2, 2], [2, 3], [3, 1], [3, 2],
+];
+const bloodPressures = ['118/76', '121/79', '126/82', '116/74', '132/84', '124/78', '128/80', '119/77'];
+
 const cloneSections = (seed, abnormal, date, plate) => CHECKLIST_TEMPLATE.map((section, sectionIndex) => ({
   ...section,
   items: section.items.map((item, itemIndex) => {
     if (item.label === '日期') return { ...item, value: date };
     if (item.label === '車號') return { ...item, value: plate };
-    if (item.kind === 'check' && abnormal && sectionIndex === 1 && itemIndex === (seed % 6)) {
-      return { ...item, status: '異常', note: seed % 2 ? '已通報主管，待確認處理方式' : '已安排回場檢查' };
+    const abnormalTarget = abnormalTargets[seed % abnormalTargets.length];
+    if (item.kind === 'check' && abnormal && sectionIndex === abnormalTarget[0] && itemIndex === abnormalTarget[1]) {
+      return { ...item, status: '異常' };
     }
-    if (item.kind === 'check' && (seed + itemIndex) % 13 === 0) return { ...item, status: '不適用' };
-    if (item.label.startsWith('胎紋')) return { ...item, value: `${(2.4 + (seed % 12) / 10).toFixed(1)} mm` };
+    if (item.kind === 'check' && sectionIndex === 2 && (seed + itemIndex) % 4 === 0) return { ...item, status: '不適用' };
+    if (item.label.startsWith('胎紋（記錄數值')) {
+      return { ...item, value: `${(2.4 + (seed % 13) / 10).toFixed(1)} mm` };
+    }
+    if (item.label.startsWith('胎壓（單位')) {
+      const left = 108 + (seed % 7);
+      const right = 109 + ((seed * 2) % 7);
+      const rear = 113 + ((seed * 3) % 8);
+      return { ...item, value: `左前 ${left} / 右前 ${right} / 後輪 ${rear}` };
+    }
+    if (item.label === '酒測 / 血壓紀錄') {
+      return { ...item, value: `酒測 0.00 mg/L / 血壓 ${bloodPressures[seed % bloodPressures.length]}` };
+    }
     return { ...item };
   }),
 }));
 
-const plates = ['NXA-1023', 'NXA-2087', 'NXA-3155', 'NXA-4072', 'NXA-5188', 'NXA-6210', 'NXA-7304', 'NXA-8416'];
+const plates = [
+  'NXA-1023', 'NXA-2087', 'NXA-3155', 'NXA-4072', 'NXA-5188', 'NXA-6210',
+  'NXA-7304', 'NXA-8416', 'NXA-9501', 'NXA-3891', 'NXA-4620', 'NXA-6835',
+  'NXA-7742', 'NXA-8264', 'NXA-9073', 'NXA-2348', 'NXA-3567', 'NXA-4196',
+  'NXA-5421', 'NXA-6580', 'NXA-7193', 'NXA-8352', 'NXA-9684', 'NXA-2876',
+];
 const inspectors = ['王日通', '李承翰', '陳怡君', '林冠宇'];
 const plannedReportTimes = ['07:30', '07:45', '08:00', '08:15', '16:30', '17:00'];
 const actualReportTimes = ['07:26', '-', '07:58', '08:12', '16:38', '-', '07:51', '16:55'];
@@ -76,16 +100,18 @@ export const INITIAL_CHECKLIST_RECORDS = Array.from({ length: 24 }, (_, index) =
   const minute = String(3 + ((index * 7) % 51)).padStart(2, '0');
   const abnormal = index % 6 === 1 || index % 9 === 4;
   const actualReportTime = actualReportTimes[index % actualReportTimes.length];
+  const hasReported = actualReportTime !== '-';
+  const reviewed = hasReported && (index % 4 === 2 || index % 7 === 0);
   return {
     id: `CL-${String(index + 1).padStart(3, '0')}`,
     driver,
     date,
     reportTime: plannedReportTimes[index % plannedReportTimes.length],
     actualReportTime,
-    updatedAt: `${date} ${hour}:${minute}`,
-    reviewed: actualReportTime !== '-' && (index % 4 === 2 || index % 7 === 0),
+    updatedAt: hasReported ? `${date} ${hour}:${minute}` : '-',
+    reviewed,
     abnormal,
-    inspector: inspectors[index % inspectors.length],
+    inspector: reviewed ? inspectors[index % inspectors.length] : null,
     sections: cloneSections(index, abnormal, date, plates[index % plates.length]),
   };
 });

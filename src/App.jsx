@@ -32,24 +32,26 @@ import {
 } from '@mui/material';
 import {
   AccessTimeRounded,
+  AccountCircleOutlined,
   AddRounded,
   ArrowForwardRounded,
   AssignmentOutlined,
   CalendarTodayRounded,
   CheckCircleRounded,
   ChevronLeftRounded,
+  ChevronRightRounded,
   CloseFullscreenRounded,
   CloseRounded,
   DashboardRounded,
   DragIndicatorRounded,
   EditOutlined,
+  KeyboardArrowDownRounded,
   KeyboardArrowUpRounded,
   LocalShippingRounded,
   LocationOnOutlined,
   MapOutlined,
   MenuRounded,
   MoreTimeRounded,
-  NotificationsNoneRounded,
   OpenInFullRounded,
   PendingActionsOutlined,
   PinDropOutlined,
@@ -777,11 +779,15 @@ const initialKeyInForm = {
 
 const navItems = [
   { id: 'monitoring', label: '營運監控', icon: DashboardRounded },
-  { id: 'checklist', label: '點呼表管理', icon: AssignmentOutlined },
+  { id: 'checklist', label: '點呼表紀錄', icon: AssignmentOutlined },
   { label: '車輛管理', icon: LocalShippingRounded },
   { label: '路線與便次', icon: RouteRounded },
   { label: '異常處理', icon: WarningRounded, badge: 5 },
-  { label: '系統權限設定', icon: SettingsOutlined },
+];
+
+const systemSettingItems = [
+  { id: 'monitoring-settings', label: '監控設定' },
+  { id: 'permission-management', label: '權限管理' },
 ];
 
 const toPercent = (hour) => ((hour - START_HOUR) / HOUR_COUNT) * 100;
@@ -942,7 +948,7 @@ function ProductMark({ compact = false }) {
   return (
     <Stack direction="row" alignItems="center" spacing={1.1}>
       {compact ? (
-        <Box className="sidebar-monogram">NX</Box>
+        <Box className="sidebar-monogram">NX POC</Box>
       ) : (
         <Typography className="product-name">NX POC</Typography>
       )}
@@ -951,12 +957,28 @@ function ProductMark({ compact = false }) {
 }
 
 function Sidebar({ expanded, onToggle, activePage, onNavigate }) {
+  const hasActiveSetting = systemSettingItems.some(({ id }) => id === activePage);
+  const [settingsOpen, setSettingsOpen] = useState(hasActiveSetting);
+
+  useEffect(() => {
+    if (hasActiveSetting) setSettingsOpen(true);
+  }, [hasActiveSetting]);
+
+  const toggleSettings = () => {
+    if (!expanded) {
+      onToggle();
+      setSettingsOpen(true);
+      return;
+    }
+    setSettingsOpen((current) => !current);
+  };
+
   return (
     <aside className={`sidebar ${expanded ? 'expanded' : 'collapsed'}`}>
       <Box className="sidebar-brand"><ProductMark compact /></Box>
       <Tooltip title={expanded ? '收合選單' : '展開選單'} placement="right">
         <IconButton className="sidebar-toggle" size="small" aria-label={expanded ? '收合選單' : '展開選單'} onClick={onToggle}>
-          <ChevronLeftRounded />
+          {expanded ? <ChevronLeftRounded /> : <ChevronRightRounded />}
         </IconButton>
       </Tooltip>
       <nav className="sidebar-nav">
@@ -983,9 +1005,48 @@ function Sidebar({ expanded, onToggle, activePage, onNavigate }) {
             </Box>
           </Tooltip>
         ))}
+        <Box className="sidebar-nav-group">
+          <Tooltip title={expanded ? '' : '系統設定'} placement="right">
+            <Box
+              className={`nav-item nav-group-trigger ${settingsOpen ? 'open' : ''} ${hasActiveSetting ? 'has-active-child' : ''}`}
+              aria-label="系統設定"
+              aria-expanded={expanded ? settingsOpen : false}
+              role="button"
+              tabIndex={0}
+              onClick={toggleSettings}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  toggleSettings();
+                }
+              }}
+            >
+              <SettingsOutlined fontSize="small" />
+              <Typography component="span">系統設定</Typography>
+              {settingsOpen
+                ? <KeyboardArrowUpRounded className="sidebar-group-chevron" />
+                : <KeyboardArrowDownRounded className="sidebar-group-chevron" />}
+            </Box>
+          </Tooltip>
+          <Collapse in={expanded && settingsOpen} timeout={180} unmountOnExit>
+            <Box className="sidebar-subnav">
+              {systemSettingItems.map(({ id, label }) => (
+                <Box
+                  key={id}
+                  className="sidebar-subnav-item"
+                  aria-label={label}
+                  aria-disabled="true"
+                >
+                  <Typography component="span">{label}</Typography>
+                </Box>
+              ))}
+            </Box>
+          </Collapse>
+        </Box>
       </nav>
       <Box className="sidebar-bottom">
         <Box className="sidebar-account" aria-label="目前登入帳號：王日通，調度管理員">
+          <AccountCircleOutlined className="sidebar-account-icon" />
           <Box className="sidebar-account-copy">
             <Typography className="sidebar-account-name" component="span">王日通</Typography>
             <Typography className="sidebar-account-role" component="span">調度管理員</Typography>
@@ -1011,9 +1072,6 @@ function TopHeader({ sidebarExpanded, onToggleSidebar }) {
           </IconButton>
         </Tooltip>
         <ProductMark />
-      </Stack>
-      <Stack direction="row" alignItems="center">
-        <IconButton size="small"><NotificationsNoneRounded /></IconButton>
       </Stack>
     </header>
   );
@@ -1160,6 +1218,7 @@ function createVehicleMapIcon(vehicle, hasAbnormal, focused, emphasized) {
 
 function VehicleMapPin({ vehicle, focused, emphasized, onOpen }) {
   const task = getRelevantVehicleTask(vehicle);
+  const planned = getTaskPlannedRange(task);
   const activeTask = vehicle.tasks.find((item) => item.start <= NOW_HOUR && item.end > NOW_HOUR);
   const isActiveOtherBusiness = Boolean(
     activeTask
@@ -1169,6 +1228,28 @@ function VehicleMapPin({ vehicle, focused, emphasized, onOpen }) {
   const hasAbnormal = vehicleHasAbnormal(vehicle);
   const abnormalMessage = '行程延遲，可能影響後續站點';
   const markerIcon = createVehicleMapIcon(vehicle, hasAbnormal, focused, emphasized);
+  const hasStarted = task.state !== 'ready' && task.start <= NOW_HOUR;
+  const hasDeparted = hasStarted && task.end <= NOW_HOUR;
+  const arrivalDifferenceMinutes = Math.round((task.start - planned.start) * 60);
+  const departureDifferenceMinutes = Math.round((task.end - planned.end) * 60);
+  const getDifferenceState = (minutes) => (
+    minutes < -ON_TIME_TOLERANCE_MINUTES
+      ? 'early'
+      : minutes > ON_TIME_TOLERANCE_MINUTES
+        ? 'delayed'
+        : 'ontime'
+  );
+  const getDifferenceValue = (minutes) => (minutes < -ON_TIME_TOLERANCE_MINUTES
+    ? `提早 ${Math.abs(minutes)} 分`
+    : minutes > ON_TIME_TOLERANCE_MINUTES
+      ? `延遲 ${minutes} 分`
+      : '準時');
+  const arrivalDifferenceState = getDifferenceState(arrivalDifferenceMinutes);
+  const departureDifferenceState = getDifferenceState(departureDifferenceMinutes);
+  const showActualDifference = hasStarted && (
+    arrivalDifferenceState !== 'ontime'
+    || (hasDeparted && departureDifferenceState !== 'ontime')
+  );
 
   return (
     <Marker
@@ -1203,9 +1284,35 @@ function VehicleMapPin({ vehicle, focused, emphasized, onOpen }) {
           <Box className="map-tooltip-row">
             <span>規劃時間</span>
             <b className="map-tooltip-time-value">
-              <span className="map-time-range">{formatHour(task.start)}–{formatHour(task.end)}</span>
+              <span className="map-time-range">{formatHour(planned.start)}–{formatHour(planned.end)}</span>
             </b>
           </Box>
+          {showActualDifference && (
+            <>
+              <Box className="map-tooltip-row">
+                <span>實際執行</span>
+                <b>{hasDeparted ? `${formatHour(task.start)}–${formatHour(task.end)}` : `${formatHour(task.start)}–進行中`}</b>
+              </Box>
+              <Box className="map-tooltip-row">
+                <span>時間差</span>
+                <b className="map-time-difference-summary">
+                  <Box component="span" className="map-time-difference-event">抵達</Box>
+                  <Box component="span" className={`map-time-difference-value ${arrivalDifferenceState}`}>
+                    {getDifferenceValue(arrivalDifferenceMinutes)}
+                  </Box>
+                  {hasDeparted && (
+                    <>
+                      <Box component="span" className="map-time-difference-separator">｜</Box>
+                      <Box component="span" className="map-time-difference-event">離站</Box>
+                      <Box component="span" className={`map-time-difference-value ${departureDifferenceState}`}>
+                        {getDifferenceValue(departureDifferenceMinutes)}
+                      </Box>
+                    </>
+                  )}
+                </b>
+              </Box>
+            </>
+          )}
         </Box>
       </LeafletTooltip>
     </Marker>
@@ -1643,28 +1750,30 @@ function OtherTaskCard({ task, onSelect, onDragStart, onDragEnd, onViewLocation 
           </Stack>
           <Typography className="other-task-station" variant="body2" mt={0.5}>{task.customer}</Typography>
         </Box>
-        <Stack className="other-task-hover-actions" direction="row" spacing={0.25} alignItems="center">
-          <Tooltip title="地圖定位">
-            <IconButton
-              className="other-task-location-button"
-              size="small"
-              draggable={false}
-              aria-label={`查看 ${task.customer} 定位`}
-              onMouseDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                onViewLocation?.(task);
-              }}
-            >
-              <PinDropOutlined />
-            </IconButton>
-          </Tooltip>
+        <Box className="other-task-action-rail">
+          <Stack className="other-task-hover-actions" direction="row" spacing={0.25} alignItems="center">
+            <Tooltip title="地圖定位">
+              <IconButton
+                className="other-task-location-button"
+                size="small"
+                draggable={false}
+                aria-label={`查看 ${task.customer} 定位`}
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onViewLocation?.(task);
+                }}
+              >
+                <PinDropOutlined />
+              </IconButton>
+            </Tooltip>
+          </Stack>
           {onDragStart && (
-            <Tooltip title="拖移至時間軸">
+            <Tooltip title="拖移至時間軸" placement="left">
               <DragIndicatorRounded className="other-task-drag-handle" aria-hidden="true" />
             </Tooltip>
           )}
-        </Stack>
+        </Box>
       </Stack>
       <Stack className="task-summary-meta" spacing={0.7}>
         <Stack direction="row" spacing={0.7} alignItems="center"><LocationOnOutlined className="task-mini-icon" /><Typography variant="caption">{task.address ?? task.pickup}</Typography></Stack>
@@ -1689,6 +1798,7 @@ function OrderQueuePanel({
   resolvedCandidatePairs,
   onSelectDriver,
   onSelectCandidate,
+  onFocusVehicle,
   onHoverCandidate,
   onResolveImpact,
   onConfirm,
@@ -1710,8 +1820,8 @@ function OrderQueuePanel({
         tabIndex={0}
         aria-label="調整待插單面板寬度"
         aria-orientation="vertical"
-        aria-valuemin={Math.min(320, Math.floor(window.innerWidth * 0.35))}
-        aria-valuemax={Math.floor(window.innerWidth * 0.35)}
+        aria-valuemin={Math.min(320, Math.floor(window.innerWidth * 0.4))}
+        aria-valuemax={Math.floor(window.innerWidth * 0.4)}
         aria-valuenow={Math.round(width)}
         onPointerDown={onResizeStart}
         onKeyDown={onResizeKeyDown}
@@ -1728,6 +1838,7 @@ function OrderQueuePanel({
           resolvedCandidatePairs={resolvedCandidatePairs}
           onSelectDriver={onSelectDriver}
           onSelectCandidate={onSelectCandidate}
+          onFocusVehicle={onFocusVehicle}
           onHoverCandidate={onHoverCandidate}
           onResolveImpact={onResolveImpact}
           onConfirm={onConfirm}
@@ -1847,16 +1958,19 @@ function DriverCandidateCard({ candidate, vehicleCandidates, selected, activeCan
       </Box>
       <Collapse in={selected} unmountOnExit>
         <Box className="driver-vehicle-picker" onClick={(event) => event.stopPropagation()}>
+          <Typography className="app-form-label">車輛</Typography>
           <TextField
             select
             fullWidth
             size="small"
-            label="車輛"
             value={selectedVehicleCandidate?.pairId ?? ''}
             onChange={selectVehicle}
             slotProps={{
               select: {
-                renderValue: (pairId) => vehicleCandidates.find((item) => item.pairId === pairId)?.vehicleId ?? '',
+                displayEmpty: true,
+                renderValue: (pairId) => pairId
+                  ? vehicleCandidates.find((item) => item.pairId === pairId)?.vehicleId ?? ''
+                  : <span className="app-form-placeholder">選擇車輛</span>,
                 MenuProps: {
                   slotProps: {
                     paper: {
@@ -1981,7 +2095,7 @@ function CandidateCard({ candidate, task, active, previewing, impactResolved, on
   );
 }
 
-function TaskPanel({ selectedTask, onDragStart, candidates, selectedDriverName, activeCandidate, hoveredCandidate, resolvedCandidatePairs, onSelectDriver, onSelectCandidate, onHoverCandidate, onResolveImpact, onConfirm, confirming = false, onClearSelection, onClosePanel, onViewLocation, onFocusTimeline, embedded = false }) {
+function TaskPanel({ selectedTask, onDragStart, candidates, selectedDriverName, activeCandidate, hoveredCandidate, resolvedCandidatePairs, onSelectDriver, onSelectCandidate, onFocusVehicle, onHoverCandidate, onResolveImpact, onConfirm, confirming = false, onClearSelection, onClosePanel, onViewLocation, onFocusTimeline, embedded = false }) {
   const [manualPickerOpen, setManualPickerOpen] = useState(false);
   const driverCandidates = candidates.filter((candidate, index, items) => (
     items.findIndex((item) => item.driverName === candidate.driverName) === index
@@ -2034,36 +2148,43 @@ function TaskPanel({ selectedTask, onDragStart, candidates, selectedDriverName, 
               <Typography variant="caption" fontWeight={750} color="primary">{selectedTask.id}</Typography>
               <Typography className="assessment-order-station" variant="body2" mt={0.35}>{selectedTask.station ?? selectedTask.customer}</Typography>
             </Box>
-            <Stack className="assessment-order-actions" direction="row" spacing={0.25}>
-              {selectedTask.assignmentMode === 'reassign-driver' && (
-                <Tooltip title="查看時間軸">
+            <Box className="assessment-order-action-rail">
+              <Stack className="assessment-order-actions" direction="row" spacing={0.25}>
+                {selectedTask.assignmentMode === 'reassign-driver' && (
+                  <Tooltip title="查看時間軸">
+                    <IconButton
+                      className="assessment-timeline-focus-button"
+                      size="small"
+                      aria-label="查看時間軸"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onFocusTimeline(selectedTask);
+                      }}
+                    >
+                      <ViewTimelineOutlined />
+                    </IconButton>
+                  </Tooltip>
+                )}
+                <Tooltip title="地圖定位">
                   <IconButton
-                    className="assessment-timeline-focus-button"
+                    className="assessment-location-button"
                     size="small"
-                    aria-label="查看時間軸"
+                    aria-label="地圖定位"
                     onClick={(event) => {
                       event.stopPropagation();
-                      onFocusTimeline(selectedTask);
+                      onViewLocation(selectedTask);
                     }}
                   >
-                    <ViewTimelineOutlined />
+                    <PinDropOutlined />
                   </IconButton>
                 </Tooltip>
+              </Stack>
+              {onDragStart && (
+                <Tooltip title="拖移至時間軸" placement="left">
+                  <DragIndicatorRounded className="assessment-order-drag-indicator" aria-hidden="true" />
+                </Tooltip>
               )}
-              <Tooltip title="地圖定位">
-                <IconButton
-                  className="assessment-location-button"
-                  size="small"
-                  aria-label="地圖定位"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onViewLocation(selectedTask);
-                  }}
-                >
-                  <PinDropOutlined />
-                </IconButton>
-              </Tooltip>
-            </Stack>
+            </Box>
           </Stack>
           <Stack className="task-summary-meta" spacing={0.7}>
             <Stack direction="row" spacing={0.7} alignItems="center"><LocationOnOutlined className="task-mini-icon" /><Typography variant="caption">{selectedTask.address ?? selectedTask.pickup}</Typography></Stack>
@@ -2110,6 +2231,7 @@ function TaskPanel({ selectedTask, onDragStart, candidates, selectedDriverName, 
               <ManualResourcePicker
                 task={selectedTask}
                 onDriverChange={onSelectDriver}
+                onVehicleChange={onFocusVehicle}
                 onSelect={onSelectCandidate}
               />
             </Collapse>
@@ -2130,7 +2252,7 @@ function TaskPanel({ selectedTask, onDragStart, candidates, selectedDriverName, 
   );
 }
 
-function ManualResourcePicker({ task, onSelect, onDriverChange }) {
+function ManualResourcePicker({ task, onSelect, onDriverChange, onVehicleChange }) {
   const [vehicleId, setVehicleId] = useState('');
   const [driverName, setDriverName] = useState('');
 
@@ -2147,14 +2269,21 @@ function ManualResourcePicker({ task, onSelect, onDriverChange }) {
   const selectedDriver = driverCandidates.find((driver) => driver.name === driverName);
   const chooseDriver = (event) => {
     const nextDriverName = event.target.value;
+    const nextSelectedDriver = driverCandidates.find((driver) => driver.name === nextDriverName);
     setDriverName(nextDriverName);
-    setVehicleId('');
     onDriverChange?.(nextDriverName);
+    if (!task || !vehicleId || !nextSelectedDriver) return;
+    onSelect(buildCandidatePair(
+      { ...getTaskWindowRange(task), taskId: task.id, vehicleId },
+      nextSelectedDriver,
+    ));
   };
 
   const chooseVehicle = (event) => {
     const nextVehicleId = event.target.value;
+    const nextVehicle = vehicleCandidates.find((vehicle) => vehicle.id === nextVehicleId);
     setVehicleId(nextVehicleId);
+    if (nextVehicle) onVehicleChange?.(nextVehicle);
     if (!task || !selectedDriver) return;
     onSelect(buildCandidatePair(
       { ...getTaskWindowRange(task), taskId: task.id, vehicleId: nextVehicleId },
@@ -2165,16 +2294,18 @@ function ManualResourcePicker({ task, onSelect, onDriverChange }) {
   return (
     <Box className="inline-manual-resource-picker">
       <Box className="inline-manual-resource-fields">
+        <Box className="app-form-field">
+          <Typography className="app-form-label">司機</Typography>
         <TextField
           select
           fullWidth
           size="small"
-          label="司機"
           value={driverName}
           onChange={chooseDriver}
           slotProps={{
             select: {
-              renderValue: (value) => value,
+              displayEmpty: true,
+              renderValue: (value) => value || <span className="app-form-placeholder">選擇司機</span>,
               MenuProps: {
                 slotProps: {
                   paper: {
@@ -2193,16 +2324,19 @@ function ManualResourcePicker({ task, onSelect, onDriverChange }) {
             </MenuItem>
           ))}
         </TextField>
+        </Box>
+        <Box className="app-form-field">
+          <Typography className="app-form-label">車輛</Typography>
         <TextField
           select
           fullWidth
           size="small"
-          label="車輛"
           value={vehicleId}
           onChange={chooseVehicle}
-          disabled={!driverName}
           slotProps={{
             select: {
+              displayEmpty: true,
+              renderValue: (value) => value || <span className="app-form-placeholder">選擇車輛</span>,
               MenuProps: {
                 slotProps: {
                   paper: {
@@ -2217,6 +2351,7 @@ function ManualResourcePicker({ task, onSelect, onDriverChange }) {
         >
           {vehicleCandidates.map((vehicle) => <MenuItem className="resource-select-menu-item" key={vehicle.id} value={vehicle.id}>{vehicle.id}</MenuItem>)}
         </TextField>
+        </Box>
       </Box>
     </Box>
   );
@@ -2263,33 +2398,36 @@ function KeyInDialog({ open, onClose, onCreate }) {
           <Box>
             <Box className="form-section">
               <Typography variant="subtitle2">基本資訊</Typography>
-              <TextField required size="small" label="客戶名稱" value={form.customer} onChange={setField('customer')} fullWidth />
+              <Box className="app-form-field">
+                <Typography className="app-form-label">客戶名稱</Typography>
+                <TextField required size="small" placeholder="輸入客戶名稱" value={form.customer} onChange={setField('customer')} fullWidth />
+              </Box>
             </Box>
 
             <Box className="form-section">
               <Typography variant="subtitle2">取送地點</Typography>
-              <TextField required size="small" label="取貨站點" value={form.pickupName} onChange={setField('pickupName')} fullWidth />
-              <TextField required size="small" label="取貨地址" value={form.pickupAddress} onChange={setField('pickupAddress')} fullWidth />
-              <TextField required size="small" label="送貨站點" value={form.deliveryName} onChange={setField('deliveryName')} fullWidth />
-              <TextField required size="small" label="送貨地址" value={form.deliveryAddress} onChange={setField('deliveryAddress')} fullWidth />
+              <Box className="app-form-field"><Typography className="app-form-label">取貨站點</Typography><TextField required size="small" placeholder="輸入取貨站點" value={form.pickupName} onChange={setField('pickupName')} fullWidth /></Box>
+              <Box className="app-form-field"><Typography className="app-form-label">取貨地址</Typography><TextField required size="small" placeholder="輸入取貨地址" value={form.pickupAddress} onChange={setField('pickupAddress')} fullWidth /></Box>
+              <Box className="app-form-field"><Typography className="app-form-label">送貨站點</Typography><TextField required size="small" placeholder="輸入送貨站點" value={form.deliveryName} onChange={setField('deliveryName')} fullWidth /></Box>
+              <Box className="app-form-field"><Typography className="app-form-label">送貨地址</Typography><TextField required size="small" placeholder="輸入送貨地址" value={form.deliveryAddress} onChange={setField('deliveryAddress')} fullWidth /></Box>
             </Box>
           </Box>
           <Box>
             <Box className="form-section">
               <Typography variant="subtitle2">時間條件</Typography>
-              <TextField required size="small" type="date" label="配送日期" value={form.date} onChange={setField('date')} fullWidth slotProps={{ inputLabel: { shrink: true } }} />
+              <Box className="app-form-field"><Typography className="app-form-label">配送日期</Typography><TextField required size="small" type="date" value={form.date} onChange={setField('date')} fullWidth /></Box>
               <Box className="form-two-columns">
-                <TextField required size="small" type="time" label="開始時間" value={form.startTime} onChange={setField('startTime')} slotProps={{ inputLabel: { shrink: true } }} />
-                <TextField required size="small" type="time" label="最晚完成" value={form.endTime} onChange={setField('endTime')} slotProps={{ inputLabel: { shrink: true } }} />
+                <Box className="app-form-field"><Typography className="app-form-label">開始時間</Typography><TextField required size="small" type="time" value={form.startTime} onChange={setField('startTime')} /></Box>
+                <Box className="app-form-field"><Typography className="app-form-label">最晚完成</Typography><TextField required size="small" type="time" value={form.endTime} onChange={setField('endTime')} /></Box>
               </Box>
-              <TextField size="small" type="number" label="預估作業時間（分）" value={form.duration} onChange={setField('duration')} fullWidth />
+              <Box className="app-form-field"><Typography className="app-form-label">預估作業時間（分）</Typography><TextField size="small" type="number" placeholder="輸入分鐘數" value={form.duration} onChange={setField('duration')} fullWidth /></Box>
             </Box>
 
             <Box className="form-section">
               <Typography variant="subtitle2">貨物資訊</Typography>
               <Box className="form-two-columns">
-                <TextField size="small" type="number" label="板數" value={form.pallets} onChange={setField('pallets')} />
-                <TextField size="small" type="number" label="重量（噸）" value={form.weight} onChange={setField('weight')} />
+                <Box className="app-form-field"><Typography className="app-form-label">板數</Typography><TextField size="small" type="number" placeholder="輸入板數" value={form.pallets} onChange={setField('pallets')} /></Box>
+                <Box className="app-form-field"><Typography className="app-form-label">重量（噸）</Typography><TextField size="small" type="number" placeholder="輸入重量" value={form.weight} onChange={setField('weight')} /></Box>
               </Box>
             </Box>
           </Box>
@@ -2385,6 +2523,9 @@ export default function App() {
   const navigateToPage = (page) => {
     setActivePage(page);
     setMaximizedView(null);
+    if (window.matchMedia('(max-width: 1179px)').matches) {
+      setSidebarExpanded(false);
+    }
     if (page !== 'monitoring') {
       setOrderQueueOpen(false);
       setSelectedTask(null);
@@ -2402,7 +2543,7 @@ export default function App() {
 
   useEffect(() => {
     const keepPanelWithinViewport = () => {
-      const maximumWidth = Math.floor(window.innerWidth * 0.35);
+      const maximumWidth = Math.floor(window.innerWidth * 0.4);
       const minimumWidth = Math.min(320, maximumWidth);
       setOrderQueueWidth((current) => Math.min(maximumWidth, Math.max(minimumWidth, current)));
     };
@@ -2412,7 +2553,7 @@ export default function App() {
   }, []);
 
   const clampOrderQueueWidth = (width) => {
-    const maximumWidth = Math.floor(window.innerWidth * 0.35);
+    const maximumWidth = Math.floor(window.innerWidth * 0.4);
     const minimumWidth = Math.min(320, maximumWidth);
     return Math.min(maximumWidth, Math.max(minimumWidth, width));
   };
@@ -2447,7 +2588,7 @@ export default function App() {
     }
     if (event.key === 'Home' || event.key === 'End') {
       event.preventDefault();
-      const maximumWidth = Math.floor(window.innerWidth * 0.35);
+      const maximumWidth = Math.floor(window.innerWidth * 0.4);
       setOrderQueueWidth(event.key === 'Home' ? Math.min(320, maximumWidth) : maximumWidth);
     }
   };
@@ -2602,7 +2743,7 @@ export default function App() {
     const dragPreview = document.createElement('div');
     dragPreview.className = 'task-drag-preview';
     const title = document.createElement('strong');
-    title.textContent = task.customer;
+    title.textContent = task.station ?? task.customer;
     const meta = document.createElement('span');
     meta.textContent = `${task.id}・${task.window}`;
     dragPreview.append(title, meta);
@@ -2974,7 +3115,7 @@ export default function App() {
       <Sidebar expanded={sidebarExpanded} onToggle={() => setSidebarExpanded((current) => !current)} activePage={activePage} onNavigate={navigateToPage} />
       <Box className="app-main">
         <TopHeader sidebarExpanded={sidebarExpanded} onToggleSidebar={() => setSidebarExpanded((current) => !current)} />
-        <main className={`content ${activePage === 'checklist' ? 'checklist-content' : ''}`}>
+        <main className={`content ${activePage === 'checklist' ? 'checklist-content' : ''} ${activePage === 'monitoring' ? 'monitoring-content' : ''}`}>
           {activePage === 'checklist' ? (
             <ChecklistManagementPage />
           ) : (
@@ -3204,10 +3345,13 @@ export default function App() {
         resolvedCandidatePairs={resolvedCandidatePairs}
         onSelectDriver={selectDriverForTask}
         onSelectCandidate={selectCandidatePreview}
+        onFocusVehicle={focusVehicleFromMap}
         onHoverCandidate={setHoveredCandidate}
         onResolveImpact={resolveCandidateImpact}
         onConfirm={confirmInsertion}
         confirming={assignmentLoading}
+        onDragStart={startDrag}
+        onDragEnd={finishDrag}
         onViewLocation={viewSelectedTaskLocation}
         onFocusTimeline={focusTaskInTimeline}
         onResizeStart={startOrderQueueResize}
