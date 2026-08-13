@@ -4,6 +4,7 @@ import { MapContainer, Marker, Polyline, TileLayer, Tooltip as LeafletTooltip, u
 import 'leaflet/dist/leaflet.css';
 import {
   Alert,
+  Autocomplete,
   Badge,
   Box,
   Button,
@@ -19,7 +20,6 @@ import {
   Fab,
   FormControlLabel,
   IconButton,
-  MenuItem,
   Paper,
   Snackbar,
   Slider,
@@ -73,7 +73,6 @@ const NOW_HOUR = 14.5;
 // Keep this configurable until the customer confirms the operational threshold.
 const ON_TIME_TOLERANCE_MINUTES = 5;
 const MAX_STATION_DURATION_HOURS = 2;
-const RESOURCE_MENU_MAX_HEIGHT = 320;
 const TIMELINE_SCALE_OPTIONS = [5, 10, 15, 30, 60];
 const TIMELINE_WIDTH_PERCENT_BY_SCALE = {
   5: 240,
@@ -1293,8 +1292,7 @@ function VehicleMapPin({ vehicle, focused, emphasized, onOpen }) {
                 <span>實際執行</span>
                 <b>{hasDeparted ? `${formatHour(task.start)}–${formatHour(task.end)}` : `${formatHour(task.start)}–進行中`}</b>
               </Box>
-              <Box className="map-tooltip-row">
-                <span>時間差</span>
+              <Box className="map-tooltip-row map-time-difference-row">
                 <b className="map-time-difference-summary">
                   <Box component="span" className="map-time-difference-event">抵達</Box>
                   <Box component="span" className={`map-time-difference-value ${arrivalDifferenceState}`}>
@@ -1597,7 +1595,7 @@ function CandidateSlot({ candidate, selectedTask, active, previewing, onSelect, 
   );
 }
 
-function Timeline({ vehicles, candidates, selectedTask, selectedDriverName, hasAvailableCandidates, activeCandidate, hoveredCandidate, onSelectCandidate, onHoverCandidate, onDropTask, onLocateVehicle, onReassignTask, insertedTasks, highlightedVehicleId, compareMode, scaleMinutes, showRequestedWindow = false, dragActive = false }) {
+function Timeline({ vehicles, candidates, selectedTask, selectedDriverName, activeCandidate, hoveredCandidate, onSelectCandidate, onHoverCandidate, onDropTask, onLocateVehicle, onReassignTask, insertedTasks, highlightedVehicleId, compareMode, scaleMinutes, showRequestedWindow = false, dragActive = false }) {
   const [highlightedTaskId, setHighlightedTaskId] = useState(null);
   const timelineWidthPercent = TIMELINE_WIDTH_PERCENT_BY_SCALE[scaleMinutes] ?? 100;
   const requestedWindow = selectedTask ? getTaskWindowRange(selectedTask) : null;
@@ -1723,11 +1721,6 @@ function Timeline({ vehicles, candidates, selectedTask, selectedDriverName, hasA
           </Box>
         );
       })}
-      {selectedTask && !hasAvailableCandidates && (
-        <Alert severity="warning" className="no-candidate-alert">
-          目前沒有同時符合車輛與司機可用條件的組合。
-        </Alert>
-      )}
     </Box>
   );
 }
@@ -1907,8 +1900,7 @@ function DriverCandidateCard({ candidate, vehicleCandidates, selected, activeCan
     : null;
   const impactCandidate = selectedVehicleCandidate ?? candidate;
   const hasDownstreamImpact = impactCandidate.hasDownstreamConflict;
-  const selectVehicle = (event) => {
-    const selectedCandidate = vehicleCandidates.find((item) => item.pairId === event.target.value);
+  const selectVehicle = (_, selectedCandidate) => {
     if (selectedCandidate) onSelectVehicle(selectedCandidate);
   };
   return (
@@ -1957,45 +1949,23 @@ function DriverCandidateCard({ candidate, vehicleCandidates, selected, activeCan
         </Box>
       </Box>
       <Collapse in={selected} unmountOnExit>
-        <Box className="driver-vehicle-picker" onClick={(event) => event.stopPropagation()}>
+        <Box className="driver-vehicle-picker app-form-field" onClick={(event) => event.stopPropagation()}>
           <Typography className="app-form-label">車輛</Typography>
-          <TextField
-            select
+          <Autocomplete
             fullWidth
-            size="small"
-            value={selectedVehicleCandidate?.pairId ?? ''}
+            disableClearable
+            options={vehicleCandidates}
+            value={selectedVehicleCandidate}
             onChange={selectVehicle}
+            getOptionLabel={(option) => option.vehicleId}
+            isOptionEqualToValue={(option, value) => option.pairId === value.pairId}
+            noOptionsText="查無結果"
             slotProps={{
-              select: {
-                displayEmpty: true,
-                renderValue: (pairId) => pairId
-                  ? vehicleCandidates.find((item) => item.pairId === pairId)?.vehicleId ?? ''
-                  : <span className="app-form-placeholder">選擇車輛</span>,
-                MenuProps: {
-                  slotProps: {
-                    paper: {
-                      className: 'resource-select-menu-paper',
-                      sx: { maxHeight: RESOURCE_MENU_MAX_HEIGHT, overflowY: 'auto' },
-                    },
-                    list: { sx: { py: 0.5 } },
-                  },
-                },
-              },
+              paper: { className: 'resource-autocomplete-menu-paper' },
+              listbox: { className: 'resource-autocomplete-menu-list' },
             }}
-          >
-            {vehicleCandidates.map((vehicleCandidate) => (
-              <MenuItem key={vehicleCandidate.pairId} value={vehicleCandidate.pairId}>
-                <Box className="vehicle-option-content">
-                  <Typography component="b">{vehicleCandidate.vehicleId}</Typography>
-                  {vehicleCandidate.nextVehicleTask && (
-                    <Typography component="span">
-                      {`下一任務 ${vehicleCandidate.nextVehicleTask.station}・${formatHour(vehicleCandidate.nextVehicleTask.start)}`}
-                    </Typography>
-                  )}
-                </Box>
-              </MenuItem>
-            ))}
-          </TextField>
+            renderInput={(params) => <TextField {...params} size="small" placeholder="選擇車輛" />}
+          />
         </Box>
       </Collapse>
     </Paper>
@@ -2210,7 +2180,7 @@ function TaskPanel({ selectedTask, onDragStart, candidates, selectedDriverName, 
           )}
           {driverCandidates.length === 0 && (
             <Typography className="candidate-empty-hint" variant="body2">
-              目前值班的司機尚無對應空檔
+              值班司機尚無對應空檔
             </Typography>
           )}
           <Paper
@@ -2267,11 +2237,10 @@ function ManualResourcePicker({ task, onSelect, onDriverChange, onVehicleChange 
     .filter((driver, index, items) => items.findIndex((item) => item.name === driver.name) === index);
   const vehicleCandidates = initialVehicles.filter((vehicle) => vehicle.serviceType === 'other-business');
   const selectedDriver = driverCandidates.find((driver) => driver.name === driverName);
-  const chooseDriver = (event) => {
-    const nextDriverName = event.target.value;
-    const nextSelectedDriver = driverCandidates.find((driver) => driver.name === nextDriverName);
+  const chooseDriver = (_, nextSelectedDriver) => {
+    const nextDriverName = nextSelectedDriver?.name ?? '';
     setDriverName(nextDriverName);
-    onDriverChange?.(nextDriverName);
+    onDriverChange?.(nextDriverName || null);
     if (!task || !vehicleId || !nextSelectedDriver) return;
     onSelect(buildCandidatePair(
       { ...getTaskWindowRange(task), taskId: task.id, vehicleId },
@@ -2279,12 +2248,11 @@ function ManualResourcePicker({ task, onSelect, onDriverChange, onVehicleChange 
     ));
   };
 
-  const chooseVehicle = (event) => {
-    const nextVehicleId = event.target.value;
-    const nextVehicle = vehicleCandidates.find((vehicle) => vehicle.id === nextVehicleId);
+  const chooseVehicle = (_, nextVehicle) => {
+    const nextVehicleId = nextVehicle?.id ?? '';
     setVehicleId(nextVehicleId);
     if (nextVehicle) onVehicleChange?.(nextVehicle);
-    if (!task || !selectedDriver) return;
+    if (!task || !selectedDriver || !nextVehicle) return;
     onSelect(buildCandidatePair(
       { ...getTaskWindowRange(task), taskId: task.id, vehicleId: nextVehicleId },
       selectedDriver,
@@ -2296,61 +2264,47 @@ function ManualResourcePicker({ task, onSelect, onDriverChange, onVehicleChange 
       <Box className="inline-manual-resource-fields">
         <Box className="app-form-field">
           <Typography className="app-form-label">司機</Typography>
-        <TextField
-          select
+        <Autocomplete
           fullWidth
-          size="small"
-          value={driverName}
+          disableClearable
+          options={driverCandidates}
+          value={selectedDriver ?? null}
           onChange={chooseDriver}
+          getOptionLabel={(option) => option.name}
+          isOptionEqualToValue={(option, value) => option.name === value.name}
+          noOptionsText="查無結果"
           slotProps={{
-            select: {
-              displayEmpty: true,
-              renderValue: (value) => value || <span className="app-form-placeholder">選擇司機</span>,
-              MenuProps: {
-                slotProps: {
-                  paper: {
-                    className: 'resource-select-menu-paper',
-                    sx: { maxHeight: RESOURCE_MENU_MAX_HEIGHT, overflowY: 'auto' },
-                  },
-                  list: { sx: { py: 0.5 } },
-                },
-              },
-            },
+            paper: { className: 'resource-autocomplete-menu-paper' },
+            listbox: { className: 'resource-autocomplete-menu-list' },
           }}
-        >
-          {driverCandidates.map((driver) => (
-            <MenuItem className="resource-select-menu-item" key={driver.name} value={driver.name}>
-              {`${driver.name}（預估工時 ${driver.workHours}）`}
-            </MenuItem>
-          ))}
-        </TextField>
+          renderOption={(props, driver) => {
+            const { key, ...optionProps } = props;
+            return (
+              <Box component="li" key={key} {...optionProps}>
+                {`${driver.name}（預估工時 ${driver.workHours}）`}
+              </Box>
+            );
+          }}
+          renderInput={(params) => <TextField {...params} size="small" placeholder="選擇司機" />}
+        />
         </Box>
         <Box className="app-form-field">
           <Typography className="app-form-label">車輛</Typography>
-        <TextField
-          select
+        <Autocomplete
           fullWidth
-          size="small"
-          value={vehicleId}
+          disableClearable
+          options={vehicleCandidates}
+          value={vehicleCandidates.find((vehicle) => vehicle.id === vehicleId) ?? null}
           onChange={chooseVehicle}
+          getOptionLabel={(option) => option.id}
+          isOptionEqualToValue={(option, value) => option.id === value.id}
+          noOptionsText="查無結果"
           slotProps={{
-            select: {
-              displayEmpty: true,
-              renderValue: (value) => value || <span className="app-form-placeholder">選擇車輛</span>,
-              MenuProps: {
-                slotProps: {
-                  paper: {
-                    className: 'resource-select-menu-paper',
-                    sx: { maxHeight: RESOURCE_MENU_MAX_HEIGHT, overflowY: 'auto' },
-                  },
-                  list: { sx: { py: 0.5 } },
-                },
-              },
-            },
+            paper: { className: 'resource-autocomplete-menu-paper' },
+            listbox: { className: 'resource-autocomplete-menu-list' },
           }}
-        >
-          {vehicleCandidates.map((vehicle) => <MenuItem className="resource-select-menu-item" key={vehicle.id} value={vehicle.id}>{vehicle.id}</MenuItem>)}
-        </TextField>
+          renderInput={(params) => <TextField {...params} size="small" placeholder="選擇車輛" />}
+        />
         </Box>
       </Box>
     </Box>
@@ -2681,6 +2635,31 @@ export default function App() {
   const comparisonDistanceKm = comparisonVehicle && comparisonTarget?.position
     ? calculateDistanceKm(comparisonVehicle.position, comparisonTarget.position)
     : null;
+
+  const getOrderMapTarget = (taskContext = assessmentTask) => {
+    if (stationMapFocus?.source === 'order') return stationMapFocus;
+    if (!taskContext?.pickupPosition) return null;
+    return {
+      position: taskContext.pickupPosition,
+      label: `${taskContext.assignmentMode === 'reassign-driver' ? '站點' : '插單站點'}｜${taskContext.station ?? taskContext.customer}`,
+      source: 'order',
+    };
+  };
+
+  const focusVehicleAgainstOrder = (vehicleId, taskContext = assessmentTask) => {
+    if (!mapExpanded || !vehicleId) return false;
+    const vehicle = initialVehicles.find((item) => item.id === vehicleId);
+    const orderTarget = getOrderMapTarget(taskContext);
+    if (!vehicle || !orderTarget?.position) return false;
+
+    setStationMapFocus({ ...orderTarget, vehicleId, source: 'order' });
+    setMapFocusRequest({
+      positions: [vehicle.position, orderTarget.position],
+      requestId: Date.now(),
+    });
+    return true;
+  };
+
   const filteredVehicles = useMemo(() => {
     let matchedVehicles = initialVehicles;
     if (overviewFilter === 'running') {
@@ -2899,7 +2878,7 @@ export default function App() {
     if (!vehicleId) return;
     setOverviewFilter('all');
     setFocusedVehicleId(vehicleId);
-    setStationMapFocus(null);
+    if (!focusVehicleAgainstOrder(vehicleId, task)) setStationMapFocus(null);
 
     window.setTimeout(() => {
       const row = document.getElementById(`timeline-vehicle-${vehicleId}`);
@@ -2941,10 +2920,10 @@ export default function App() {
   const selectDriverForTask = (driverName) => {
     setSelectedDriverName(driverName);
     setActiveCandidate(null);
-    setStationMapFocus(null);
     if (!driverName) {
       setHoveredCandidate(null);
       setFocusedVehicleId(null);
+      setStationMapFocus(null);
       return;
     }
 
@@ -2957,7 +2936,10 @@ export default function App() {
     setHoveredCandidate(focusCandidate ?? null);
     setFocusedVehicleId(focusVehicleId);
     if (focusVehicleId) {
+      if (!focusVehicleAgainstOrder(focusVehicleId)) setStationMapFocus(null);
       scrollCandidateIntoView(focusCandidate ?? { vehicleId: focusVehicleId });
+    } else {
+      setStationMapFocus(null);
     }
   };
 
@@ -2971,8 +2953,8 @@ export default function App() {
 
   const focusVehicleFromMap = (vehicle) => {
     setOverviewFilter('all');
-    setStationMapFocus(null);
     setFocusedVehicleId(vehicle.id);
+    if (!focusVehicleAgainstOrder(vehicle.id)) setStationMapFocus(null);
     window.setTimeout(() => {
       const row = document.getElementById(`timeline-vehicle-${vehicle.id}`);
       const timeline = row?.closest('.timeline-shell');
@@ -2995,9 +2977,10 @@ export default function App() {
         vehicleId: vehicle.id,
         position: stationPosition,
         label: `站點｜${task.station}`,
+        source: 'station',
       });
       setMapFocusRequest({ positions: [vehicle.position, stationPosition], requestId: Date.now() });
-    } else {
+    } else if (!focusVehicleAgainstOrder(vehicle.id)) {
       setStationMapFocus(null);
       setMapFocusRequest({ vehicleId: vehicle.id, requestId: Date.now() });
     }
@@ -3026,6 +3009,7 @@ export default function App() {
       vehicleId: vehicle?.id,
       position: targetPosition,
       label: `${task.assignmentMode === 'reassign-driver' ? '站點' : '插單站點'}｜${task.station ?? task.customer}`,
+      source: 'order',
     });
     setMapFocusRequest({
       position: targetPosition,
@@ -3294,7 +3278,6 @@ export default function App() {
                 candidates={timelineCandidates}
                 selectedTask={assessmentTask}
                 selectedDriverName={selectedDriverName}
-                hasAvailableCandidates={candidates.length > 0}
                 activeCandidate={activeCandidate}
                 hoveredCandidate={hoveredCandidate}
                 onSelectCandidate={(candidate) => selectDriverForTask(candidate.driverName)}
