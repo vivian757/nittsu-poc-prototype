@@ -1,0 +1,10 @@
+{
+  "name": "NX POC Design System",
+  "designMd": "../DESIGN.md",
+  "northStar": "調度控制台",
+  "density": "compact",
+  "theme": "light",
+  "primaryColor": "#123D88",
+  "canvasColor": "#F4F7FA",
+  "surfaceColor": "#FFFFFF"
+}

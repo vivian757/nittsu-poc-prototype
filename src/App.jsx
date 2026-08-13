@@ -7,8 +7,10 @@ import {
   Badge,
   Box,
   Button,
+  Checkbox,
   Chip,
   Collapse,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -20,8 +22,8 @@ import {
   MenuItem,
   Paper,
   Snackbar,
+  Slider,
   Stack,
-  Switch,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
@@ -30,7 +32,9 @@ import {
 } from '@mui/material';
 import {
   AccessTimeRounded,
+  AddRounded,
   ArrowForwardRounded,
+  AssignmentOutlined,
   CalendarTodayRounded,
   CheckCircleRounded,
   ChevronLeftRounded,
@@ -38,6 +42,7 @@ import {
   CloseRounded,
   DashboardRounded,
   DragIndicatorRounded,
+  EditOutlined,
   KeyboardArrowUpRounded,
   LocalShippingRounded,
   LocationOnOutlined,
@@ -52,17 +57,32 @@ import {
   RouteRounded,
   SearchRounded,
   SettingsOutlined,
-  WarningAmberRounded,
+  ViewTimelineOutlined,
   WarningAmberOutlined,
   WarningRounded,
 } from '@mui/icons-material';
+import ChecklistManagementPage from './ChecklistManagementPage';
 
 const START_HOUR = 6;
 const END_HOUR = 20;
 const HOUR_COUNT = END_HOUR - START_HOUR;
 const NOW_HOUR = 14.5;
+// Prototype assumption: arrival within +/- 5 minutes is treated as on time.
+// Keep this configurable until the customer confirms the operational threshold.
+const ON_TIME_TOLERANCE_MINUTES = 5;
 const MAX_STATION_DURATION_HOURS = 2;
-const hourMarks = Array.from({ length: HOUR_COUNT + 1 }, (_, i) => START_HOUR + i);
+const RESOURCE_MENU_MAX_HEIGHT = 320;
+const TIMELINE_SCALE_OPTIONS = [5, 10, 15, 30, 60];
+const TIMELINE_WIDTH_PERCENT_BY_SCALE = {
+  5: 240,
+  10: 190,
+  15: 160,
+  30: 130,
+  60: 100,
+};
+const ASSIGNMENT_LOADING_DURATION_MS = 1800;
+const POST_ASSIGNMENT_DIALOG_DELAY_MS = 1200;
+const hourMarks = Array.from({ length: HOUR_COUNT + 1 }, (_, index) => START_HOUR + index);
 
 const statusMeta = {
   early: { label: '提早', color: '#2F73C8', bg: '#EAF3FF' },
@@ -72,6 +92,13 @@ const statusMeta = {
   ready: { label: '待出發', color: '#607085', bg: '#EEF2F6' },
   offline: { label: '資訊中斷', color: '#7B5A9B', bg: '#F3ECF9' },
   done: { label: '已完成', color: '#177349', bg: '#E7F5EE' },
+};
+
+const timelineActualStatusMeta = {
+  ...statusMeta,
+  early: { ...statusMeta.early, color: '#286EC3', bg: '#DDEBFA' },
+  ontime: { ...statusMeta.ontime, color: '#91A1B2', bg: '#DCE4EC' },
+  delayed: { ...statusMeta.delayed, color: '#BB3044', bg: '#F8DFE4' },
 };
 
 const baseVehicles = [
@@ -103,7 +130,7 @@ const baseVehicles = [
     todayWork: '8 小時 55 分',
     load: 78,
     tasks: [
-      { id: 'TYO2-1', label: 'TYO2-1 牛奶便', station: '台裕', address: '桃園市中壢區民族路六段360號', start: 7.1, end: 11.8, state: 'ontime' },
+      { id: 'TYO2-1', label: 'TYO2-1 牛奶便', station: '台裕', address: '桃園市中壢區民族路六段360號', start: 7.1, end: 11.8, state: 'delayed', arrivalVarianceMinutes: 9, departureVarianceMinutes: 14 },
       { id: 'TYO2-3', label: 'TYO2-3 牛奶便', station: '松下', address: '桃園市觀音區寶倉街102號', start: 15.7, end: 19.3, state: 'ready' },
     ],
   },
@@ -119,7 +146,7 @@ const baseVehicles = [
     todayWork: '8 小時 10 分',
     load: 45,
     tasks: [
-      { id: 'HC3-2', label: 'HC3-2 牛奶便', station: '捷太格特', address: '新竹縣湖口鄉光復北路23號', start: 6.2, end: 9.6, state: 'early', earlyMinutes: 12 },
+      { id: 'HC3-2', label: 'HC3-2 牛奶便', station: '捷太格特', address: '新竹縣湖口鄉光復北路23號', start: 6.2, end: 9.6, state: 'ontime' },
       { id: 'HC3-5', label: 'HC3-5 牛奶便', station: '新三興', address: '新竹縣湖口鄉仁德路7號', start: 16.4, end: 19.6, state: 'ready' },
     ],
   },
@@ -134,7 +161,7 @@ const baseVehicles = [
     gps: '14:27',
     load: 85,
     tasks: [
-      { id: 'TC5-1', label: 'TC5-1 牛奶便', station: '建上本社', address: '台中市南屯區工業區二十六路9號', start: 7.4, end: 12.8, state: 'ontime' },
+      { id: 'TC5-1', label: 'TC5-1 牛奶便', station: '建上本社', address: '台中市南屯區工業區二十六路9號', start: 7.4, end: 12.8, state: 'delayed', arrivalVarianceMinutes: 11, departureVarianceMinutes: 18 },
       { id: 'TC5-2', label: 'TC5-2 交班配送', station: '建上物流中心', address: '台中市西屯區工業區十二路12號', start: 13.8, end: 19.3, state: 'delayed', delay: 60 },
     ],
   },
@@ -150,9 +177,9 @@ const baseVehicles = [
     todayWork: '7 小時 50 分',
     load: 53,
     tasks: [
-      { id: 'TY7-1', label: 'TY7-1 牛奶便', station: '培林', address: '桃園市龜山區頂湖路61-1號', start: 6.8, end: 11.4, state: 'ontime' },
-      { id: 'TY7-3', label: 'TY7-3 牛奶便', station: '台達電子', address: '桃園市龜山區山鶯路252號', start: 14.3, end: 16.0, state: 'delayed', delay: 12 },
-      { id: 'TY7-4', label: 'TY7-4 牛奶便', station: '造隆', address: '桃園市蘆竹區光明路二段151巷10號', start: 16.2, end: 19.2, state: 'ready', risk: true, projectedDelay: 20 },
+      { id: 'TY7-1', label: 'TY7-1 牛奶便', station: '培林', address: '桃園市龜山區頂湖路61-1號', start: 6.8, end: 11.4, state: 'early', arrivalVarianceMinutes: -7, departureVarianceMinutes: -13 },
+      { id: 'TY7-3', label: 'TY7-3 牛奶便', station: '台達電子', address: '桃園市龜山區山鶯路252號', start: 13.4, end: 16.0, state: 'running', arrivalVarianceMinutes: -12 },
+      { id: 'TY7-4', label: 'TY7-4 牛奶便', station: '造隆', address: '桃園市蘆竹區光明路二段151巷10號', start: 16.2, end: 19.2, state: 'ready' },
     ],
   },
   {
@@ -167,7 +194,7 @@ const baseVehicles = [
     todayWork: '9 小時 15 分',
     load: 20,
     tasks: [
-      { id: 'HC8-1', label: 'HC8-1 牛奶便', station: '台惟', address: '新竹縣湖口鄉光復路16號', start: 8.1, end: 12.1, state: 'early', earlyMinutes: 18 },
+      { id: 'HC8-1', label: 'HC8-1 牛奶便', station: '台惟', address: '新竹縣湖口鄉光復路16號', start: 8.1, end: 12.1, state: 'early', arrivalVarianceMinutes: -18, departureVarianceMinutes: -6 },
       { id: 'HC8-3', label: 'HC8-3 牛奶便', station: '豐裕', address: '新竹縣湖口鄉光復路6-1號', start: 17.1, end: 19.8, state: 'ready' },
     ],
   },
@@ -182,7 +209,7 @@ const baseVehicles = [
     gps: '14:29',
     load: 68,
     tasks: [
-      { id: 'TY9-1', label: 'TY9-1 牛奶便', station: '華通電腦', address: '桃園市蘆竹區新南路二段90號', start: 7.0, end: 11.7, state: 'ontime' },
+      { id: 'TY9-1', label: 'TY9-1 牛奶便', station: '華通電腦', address: '桃園市蘆竹區新南路二段90號', start: 7.0, end: 11.7, state: 'ontime', arrivalVarianceMinutes: 12, departureVarianceMinutes: -7 },
       { id: 'TY9-2', label: 'TY9-2 牛奶便', station: '大同公司', address: '桃園市大園區中山南路472號', start: 12.9, end: 16.5, state: 'ontime' },
     ],
   },
@@ -197,7 +224,7 @@ const baseVehicles = [
     gps: '14:27',
     load: 72,
     tasks: [
-      { id: 'HC6-2', label: 'HC6-2 牛奶便', station: '聯電', address: '新竹市東區力行二路3號', start: 7.8, end: 12.4, state: 'ontime' },
+      { id: 'HC6-2', label: 'HC6-2 牛奶便', station: '聯電', address: '新竹市東區力行二路3號', start: 7.8, end: 12.4, state: 'early', arrivalVarianceMinutes: -7, departureVarianceMinutes: -15 },
       { id: 'HC6-4', label: 'HC6-4 牛奶便', station: '力成科技', address: '新竹縣湖口鄉大同路10號', start: 13.4, end: 14.3, state: 'ontime' },
     ],
   },
@@ -212,7 +239,7 @@ const baseVehicles = [
     gps: '14:26',
     load: 81,
     tasks: [
-      { id: 'TC8-1', label: 'TC8-1 牛奶便', station: '矽品精密', address: '台中市潭子區大豐路三段123號', start: 6.9, end: 12.6, state: 'ontime' },
+      { id: 'TC8-1', label: 'TC8-1 牛奶便', station: '矽品精密', address: '台中市潭子區大豐路三段123號', start: 6.9, end: 12.6, state: 'ontime', arrivalVarianceMinutes: -14, departureVarianceMinutes: 9 },
       { id: 'TC8-3', label: 'TC8-3 牛奶便', station: '友達光電', address: '台中市西屯區中科路1號', start: 14.0, end: 18.2, state: 'ontime' },
     ],
   },
@@ -227,7 +254,7 @@ const baseVehicles = [
     gps: '14:29',
     load: 48,
     tasks: [
-      { id: 'MAC7-1', label: 'MAC7-1 牛奶便', station: '光磊科技', address: '新竹市東區展業一路8號', start: 6.4, end: 10.4, state: 'early', earlyMinutes: 8 },
+      { id: 'MAC7-1', label: 'MAC7-1 牛奶便', station: '光磊科技', address: '新竹市東區展業一路8號', start: 6.4, end: 10.4, state: 'ontime', arrivalVarianceMinutes: 12, departureVarianceMinutes: -8 },
       { id: 'MAC7-3', label: 'MAC7-3 牛奶便', station: '欣興電子', address: '新竹縣湖口鄉光復北路69號', start: 14.8, end: 18.5, state: 'ontime' },
     ],
   },
@@ -257,8 +284,8 @@ const baseVehicles = [
     gps: '14:30',
     load: 57,
     tasks: [
-      { id: 'HC9-2', label: 'HC9-2 牛奶便', station: '旺宏電子', address: '新竹市東區力行路16號', start: 6.9, end: 11.1, state: 'early', earlyMinutes: 6 },
-      { id: 'HC9-4', label: 'HC9-4 牛奶便', station: '世界先進', address: '新竹市東區園區三路123號', start: 13.9, end: 17.7, state: 'delayed', delay: 25 },
+      { id: 'HC9-2', label: 'HC9-2 牛奶便', station: '旺宏電子', address: '新竹市東區力行路16號', start: 6.9, end: 11.1, state: 'ontime' },
+      { id: 'HC9-4', label: 'HC9-4 牛奶便', station: '世界先進', address: '新竹市東區園區三路123號', start: 13.9, end: 17.7, state: 'delayed', delay: 30 },
     ],
   },
   {
@@ -303,7 +330,7 @@ const baseVehicles = [
     load: 52,
     tasks: [
       { id: 'MAC9-1', label: 'MAC9-1 牛奶便', station: '群創光電', address: '新竹縣竹南鎮科學路160號', start: 7.0, end: 11.6, state: 'early', earlyMinutes: 10 },
-      { id: 'MAC9-2', label: 'MAC9-2 牛奶便', station: '晶元光電', address: '新竹市東區力行五路5號', start: 14.2, end: 18.1, state: 'delayed', delay: 18 },
+      { id: 'MAC9-2', label: 'MAC9-2 牛奶便', station: '晶元光電', address: '新竹市東區力行五路5號', start: 13.4, end: 18.1, state: 'delayed', delay: 18 },
     ],
   },
 ];
@@ -339,6 +366,54 @@ const overviewVehicleSeeds = [
   { id: 'NXA-4795', driver: '賴冠宇', routeName: 'TY18', trip: '2', position: [24.9561, 121.2916], area: '桃園', stations: [['美超微電腦', '桃園市八德區和平路1125巷88號'], ['國瑞汽車', '桃園市中壢區定寧路73號']] },
   { id: 'NXA-5018', driver: '蘇柏勳', routeName: 'HC18', trip: '5', position: [24.7984, 121.0257], area: '新竹', stations: [['聯詠科技', '新竹市東區創新一路13號'], ['瑞昱半導體', '新竹市東區創新二路2號']] },
   { id: 'NXA-5234', driver: '鍾宇翔', routeName: 'TC18', trip: '3', position: [24.2048, 120.6721], area: '台中', stations: [['精材科技', '台中市潭子區建國路18號'], ['台灣佳能潭子廠', '台中市潭子區加工出口區北環路9號']] },
+];
+
+const otherBusinessVehicles = [
+  {
+    id: 'NXA-8801', driver: '林志豪', routeName: '他向', trip: '待排', serviceType: 'other-business',
+    position: [24.8796, 121.0254], area: '新竹', status: 'ready', gps: '14:29', todayWork: '0 小時 0 分', load: 0,
+    tasks: [
+      { id: 'OTH-V01-1', label: '他向業務', station: '新竹轉運站', address: '新竹縣湖口鄉中華路3號', start: 9.0, end: 11.0, state: 'ontime' },
+      { id: 'OTH-V01-2', label: '他向業務', businessType: 'other-business', customer: '竹科材料中心', station: '湖口物流倉', address: '新竹縣湖口鄉工業一路7號', start: 13.0, end: 14.8, state: 'ontime' },
+    ],
+  },
+  {
+    id: 'NXA-8802', driver: '待指派', routeName: '他向', trip: '待排', serviceType: 'other-business',
+    position: [24.8642, 121.0187], area: '新竹', status: 'ready', gps: '14:28', todayWork: '0 小時 0 分', load: 0,
+    tasks: [
+      { id: 'OTH-V02-1', label: '他向業務', station: '竹北配送站', address: '新竹縣竹北市光明六路12號', start: 10.2, end: 12.2, state: 'ontime' },
+    ],
+  },
+  {
+    id: 'NXA-8901', driver: '吳啟文', routeName: '他向', trip: '待排', serviceType: 'other-business',
+    position: [24.9692, 121.2308], area: '桃園', status: 'ready', gps: '14:30', todayWork: '0 小時 0 分', load: 0,
+    tasks: [
+      { id: 'OTH-V03-1', label: '他向業務', station: '中壢物流站', address: '桃園市中壢區松江北路18號', start: 8.8, end: 10.8, state: 'ontime' },
+      { id: 'OTH-V03-2', label: '他向業務', businessType: 'other-business', customer: '桃園電子零件廠', station: '桃園轉運站', address: '桃園市大園區中山南路18號', start: 13.2, end: 15.0, state: 'ontime' },
+    ],
+  },
+  {
+    id: 'NXA-8902', driver: '待指派', routeName: '他向', trip: '待排', serviceType: 'other-business',
+    position: [25.0351, 121.1032], area: '桃園', status: 'ready', gps: '14:29', todayWork: '0 小時 0 分', load: 0,
+    tasks: [
+      { id: 'OTH-V04-1', label: '他向業務', station: '龜山物流倉', address: '桃園市龜山區山鶯路88號', start: 9.5, end: 11.5, state: 'ontime' },
+    ],
+  },
+  {
+    id: 'NXA-9001', driver: '陳柏均', routeName: '他向', trip: '待排', serviceType: 'other-business',
+    position: [24.2061, 120.6722], area: '台中', status: 'ready', gps: '14:27', todayWork: '0 小時 0 分', load: 0,
+    tasks: [
+      { id: 'OTH-V05-1', label: '他向業務', station: '潭子配送站', address: '台中市潭子區建國路20號', start: 9.2, end: 11.2, state: 'ontime' },
+      { id: 'OTH-V05-2', label: '他向業務', businessType: 'other-business', customer: '台中精密工業', station: '台中轉運站', address: '台中市西屯區工業區一路18號', start: 13.1, end: 14.9, state: 'ontime' },
+    ],
+  },
+  {
+    id: 'NXA-9002', driver: '待指派', routeName: '他向', trip: '待排', serviceType: 'other-business',
+    position: [24.1708, 120.6489], area: '台中', status: 'ready', gps: '14:28', todayWork: '0 小時 0 分', load: 0,
+    tasks: [
+      { id: 'OTH-V06-1', label: '他向業務', station: '台中物流倉', address: '台中市南屯區精科路9號', start: 10.0, end: 12.0, state: 'ontime' },
+    ],
+  },
 ];
 
 const generatedOverviewVehicles = overviewVehicleSeeds.map((seed, index) => {
@@ -382,20 +457,20 @@ const supplementalFutureTasksByVehicle = {
     { id: 'TC8-4', label: 'TC8-4 牛奶便', station: '台灣康寧', address: '台中市中區科園路1號', start: 17.8, end: 19.2, state: 'ready' },
   ],
   'NXA-4620': [
-    { id: 'TC3-4', label: 'TC3-4 牛奶便', station: '上銀科技', address: '台中市南屯區精科路7號', start: 17.8, end: 19.3, state: 'ready', risk: true, projectedDelay: 15 },
+    { id: 'TC3-4', label: 'TC3-4 牛奶便', station: '上銀科技', address: '台中市南屯區精科路7號', start: 17.8, end: 19.3, state: 'ready' },
   ],
   'NXA-4072': [
     { id: 'TC5-3', label: 'TC5-3 牛奶便', station: '矽品精密', address: '台中市潭子區大豐路三段123號', start: 16.2, end: 17.6, state: 'ready', risk: true, projectedDelay: 60 },
   ],
   'NXA-3891': [
-    { id: 'HC9-5', label: 'HC9-5 牛奶便', station: '台積電十二廠', address: '新竹市東區力行六路8號', start: 16.2, end: 17.6, state: 'ready', risk: true, projectedDelay: 25 },
+    { id: 'HC9-5', label: 'HC9-5 牛奶便', station: '台積電十二廠', address: '新竹市東區力行六路8號', start: 16.2, end: 17.6, state: 'ready', risk: true, projectedDelay: 30 },
   ],
   'NXA-6835': [
-    { id: 'MAC9-3', label: 'MAC9-3 牛奶便', station: '聯電湖口廠', address: '新竹縣湖口鄉光復北路8號', start: 16.4, end: 17.8, state: 'ready', risk: true, projectedDelay: 18 },
+    { id: 'MAC9-3', label: 'MAC9-3 牛奶便', station: '聯電湖口廠', address: '新竹縣湖口鄉光復北路8號', start: 16.4, end: 17.8, state: 'ready' },
   ],
 };
 
-const initialVehicles = [...baseVehicles, ...generatedOverviewVehicles].map((vehicle, vehicleIndex) => {
+const initialVehicles = [...baseVehicles, ...generatedOverviewVehicles, ...otherBusinessVehicles].map((vehicle, vehicleIndex) => {
   const vehicleTasks = [...vehicle.tasks, ...(supplementalFutureTasksByVehicle[vehicle.id] ?? [])];
   const tasks = vehicleTasks.map((task, taskIndex) => {
     const displayDuration = 1.5 + ((vehicleIndex + taskIndex) % 3) * 0.25;
@@ -432,10 +507,51 @@ const initialVehicles = [...baseVehicles, ...generatedOverviewVehicles].map((veh
   };
 });
 
-const vehicleHasDelayRisk = (vehicle) => vehicle.tasks.some((task) => task.risk && ['running', 'ready'].includes(task.state));
-const vehicleHasDelay = (vehicle) => vehicle.status === 'delayed' || vehicle.tasks.some((task) => task.state === 'delayed');
-const vehicleHasAbnormal = (vehicle) => vehicleHasDelay(vehicle) || vehicleHasDelayRisk(vehicle);
+const getLatestExecutedTask = (vehicle) => [...vehicle.tasks]
+  .filter((task) => task.start <= NOW_HOUR && task.state !== 'ready')
+  .sort((taskA, taskB) => taskB.start - taskA.start)[0] ?? null;
+const taskHasDelay = (task) => {
+  if (!task) return false;
+
+  // 異常以最新已發生的時間點為準：已有離站紀錄就看離站，
+  // 尚未離站才以抵達狀態判斷，避免已準時／提早離站仍被列為異常。
+  if (Number.isFinite(task.departureVarianceMinutes)) {
+    return task.departureVarianceMinutes > ON_TIME_TOLERANCE_MINUTES;
+  }
+  if (Number.isFinite(task.arrivalVarianceMinutes)) {
+    return task.arrivalVarianceMinutes > ON_TIME_TOLERANCE_MINUTES;
+  }
+
+  return task.state === 'delayed'
+    || Number(task.delay) > ON_TIME_TOLERANCE_MINUTES;
+};
+const vehicleHasDelay = (vehicle) => taskHasDelay(getLatestExecutedTask(vehicle));
+const getPotentiallyDelayedStationIds = (vehicle) => {
+  const affectedStationIds = new Set(
+    vehicle.tasks
+      .filter((task) => task.risk && ['running', 'ready'].includes(task.state))
+      .map((task) => task.id),
+  );
+  const orderedTasks = [...vehicle.tasks].sort((taskA, taskB) => taskA.start - taskB.start);
+
+  const latestExecutedTask = getLatestExecutedTask(vehicle);
+  const latestTaskIndex = orderedTasks.findIndex((task) => task.id === latestExecutedTask?.id);
+  const nextTask = orderedTasks[latestTaskIndex + 1];
+  const hasDelayedDeparture = Number(latestExecutedTask?.departureVarianceMinutes) > ON_TIME_TOLERANCE_MINUTES;
+  if (hasDelayedDeparture && nextTask?.end > NOW_HOUR) affectedStationIds.add(nextTask.id);
+
+  return affectedStationIds;
+};
+const getPotentiallyDelayedStationCount = (vehicle) => getPotentiallyDelayedStationIds(vehicle).size;
+const vehicleHasAbnormal = (vehicle) => vehicleHasDelay(vehicle);
+const vehicleIsRunning = (vehicle) => ['running', 'delayed'].includes(vehicle.status);
+const getVehicleOverviewOrder = (vehicle) => {
+  if (vehicleHasAbnormal(vehicle)) return 0;
+  if (vehicleIsRunning(vehicle)) return 1;
+  return 2;
+};
 const fleetStatusCounts = {
+  running: 68,
   abnormal: initialVehicles.filter(vehicleHasAbnormal).length,
 };
 
@@ -443,6 +559,7 @@ const initialOtherTasks = [
   {
     id: 'OTH-0241',
     customer: '竹科材料中心',
+    station: '湖口材料倉',
     address: '新竹縣湖口鄉光復北路113號',
     route: '湖口 → 新竹科學園區',
     pickup: '湖口工業區',
@@ -456,6 +573,7 @@ const initialOtherTasks = [
   {
     id: 'OTH-0242',
     customer: '桃園電子零件廠',
+    station: '龜山零件倉',
     address: '桃園市龜山區山鶯路252號',
     route: '龜山 → 中壢',
     pickup: '桃園龜山',
@@ -469,12 +587,13 @@ const initialOtherTasks = [
   {
     id: 'OTH-0243',
     customer: '台中精密工業',
+    station: '潭子一廠',
     address: '台中市潭子區建國路18號',
     route: '潭子 → 彰化',
     pickup: '台中潭子',
     pickupPosition: [24.2116, 120.7069],
     delivery: '彰化和美',
-    window: '17:30 前取貨',
+    window: '16:00–17:30',
     duration: '80 分',
     cargo: '8 板｜5.0 噸',
     tone: 'warning',
@@ -482,6 +601,7 @@ const initialOtherTasks = [
   {
     id: 'OTH-0244',
     customer: '中精工業',
+    station: '中精湖口廠',
     address: '桃園市中壢區松江北路20號',
     route: '日通中壢 → 中精',
     pickup: '日通中壢',
@@ -494,7 +614,8 @@ const initialOtherTasks = [
   },
   {
     id: 'OTH-0245',
-    customer: '湖口零組件倉',
+    customer: '新竹零組件公司',
+    station: '湖口零組件倉',
     address: '新竹縣湖口鄉工業一路12號',
     route: '湖口工業區 → 新竹物流園區',
     pickup: '湖口工業區',
@@ -655,10 +776,12 @@ const initialKeyInForm = {
 };
 
 const navItems = [
-  { label: '營運監控', icon: DashboardRounded, active: true },
+  { id: 'monitoring', label: '營運監控', icon: DashboardRounded },
+  { id: 'checklist', label: '點呼表管理', icon: AssignmentOutlined },
   { label: '車輛管理', icon: LocalShippingRounded },
   { label: '路線與便次', icon: RouteRounded },
-  { label: '異常處理', icon: WarningAmberRounded, badge: 5 },
+  { label: '異常處理', icon: WarningRounded, badge: 5 },
+  { label: '系統權限設定', icon: SettingsOutlined },
 ];
 
 const toPercent = (hour) => ((hour - START_HOUR) / HOUR_COUNT) * 100;
@@ -704,16 +827,69 @@ const getVehicleDriverOptions = (vehicle) => (
   ?? [{ name: vehicle.driver, workHours: vehicle.todayWork }]
 );
 
+const MIN_DRIVER_BUFFER_MINUTES = 20;
+const OTHER_BUSINESS_VEHICLE_OPTION_LIMIT = 6;
+
+const getDriverAssignments = (driverName) => initialVehicles.flatMap((vehicle) => (
+  vehicle.tasks
+    .filter((task) => (task.assignedDriver ?? vehicle.driver) === driverName)
+    .map((task) => ({ ...task, vehicleId: vehicle.id }))
+));
+
+const getCandidatePairId = (candidate) => `${candidate.taskId}-${candidate.vehicleId}-${candidate.driverName}`;
+const getDriverImpactId = (candidate) => `${candidate.taskId}-${candidate.driverName}-downstream-impact`;
+
 const alignCandidateToTaskWindow = (candidate, task) => ({
   ...candidate,
   ...getTaskWindowRange(task),
   taskId: task.id,
 });
 
-const candidateFitsVehicleSchedule = (candidate) => {
+const buildCandidatePair = (candidate, driver) => {
+  const vehicle = initialVehicles.find((item) => item.id === candidate.vehicleId);
+  if (!vehicle) return null;
+  const driverAssignments = getDriverAssignments(driver.name).sort((a, b) => a.start - b.start);
+  const vehicleAssignments = [...vehicle.tasks].sort((a, b) => a.start - b.start);
+  const previousDriverTask = driverAssignments.filter((task) => task.end <= candidate.start).at(-1) ?? null;
+  const nextDriverTask = driverAssignments.find((task) => task.start >= candidate.end) ?? null;
+  const previousVehicleTask = vehicleAssignments.filter((task) => task.end <= candidate.start).at(-1) ?? null;
+  const nextVehicleTask = vehicleAssignments.find((task) => task.start >= candidate.end) ?? null;
+  const bufferMinutes = nextDriverTask
+    ? Math.max(0, Math.round((nextDriverTask.start - candidate.end) * 60))
+    : null;
+  const hasDownstreamConflict = bufferMinutes !== null && bufferMinutes < MIN_DRIVER_BUFFER_MINUTES;
+
+  return {
+    ...candidate,
+    driverName: driver.name,
+    driverWorkHours: driver.workHours,
+    driverAssignments,
+    vehicleAssignments,
+    previousDriverTask,
+    nextDriverTask,
+    previousVehicleTask,
+    nextVehicleTask,
+    bufferMinutes,
+    hasDownstreamConflict,
+    pairId: `${candidate.taskId}-${candidate.vehicleId}-${driver.name}`,
+  };
+};
+
+const candidatePairIsAvailable = (candidate) => {
+  if (!candidate) return false;
   const vehicle = initialVehicles.find((item) => item.id === candidate.vehicleId);
   if (!vehicle) return false;
-  return vehicle.tasks.every((task) => task.end <= candidate.start || task.start >= candidate.end);
+  const vehicleAvailable = vehicle.tasks.every((task) => task.end <= candidate.start || task.start >= candidate.end);
+  const driverAvailable = candidate.driverAssignments.every((task) => task.end <= candidate.start || task.start >= candidate.end);
+  return vehicleAvailable && driverAvailable;
+};
+
+const getEligibleDriversForCandidates = (candidates) => {
+  const drivers = candidates.flatMap((candidate) => {
+    const vehicle = initialVehicles.find((item) => item.id === candidate.vehicleId);
+    return vehicle ? getVehicleDriverOptions(vehicle) : [];
+  });
+  return drivers.filter((driver, index, items) => items.findIndex((item) => item.name === driver.name) === index);
 };
 
 const calculateDistanceKm = ([startLat, startLng], [endLat, endLng]) => {
@@ -738,10 +914,20 @@ const getStationMapPosition = (vehicle, task) => {
 };
 
 const getTaskPlannedRange = (task) => {
+  if (Number.isFinite(task.plannedStart) && Number.isFinite(task.plannedEnd)) {
+    return { start: task.plannedStart, end: task.plannedEnd };
+  }
+  if (Number.isFinite(task.arrivalVarianceMinutes) || Number.isFinite(task.departureVarianceMinutes)) {
+    const arrivalVarianceHours = Number(task.arrivalVarianceMinutes ?? 0) / 60;
+    const departureVarianceHours = Number(task.departureVarianceMinutes ?? 0) / 60;
+    return {
+      start: task.start - arrivalVarianceHours,
+      end: task.end - departureVarianceHours,
+    };
+  }
   let plannedOffsetMinutes = 0;
   if (task.state === 'delayed' && task.delay) plannedOffsetMinutes = -Math.abs(Number.parseFloat(task.delay));
   if (task.state === 'early' && task.earlyMinutes) plannedOffsetMinutes = task.earlyMinutes;
-  if (task.risk && task.projectedDelay) plannedOffsetMinutes = -task.projectedDelay;
   const offsetHours = plannedOffsetMinutes / 60;
   return { start: task.start + offsetHours, end: task.end + offsetHours };
 };
@@ -764,7 +950,7 @@ function ProductMark({ compact = false }) {
   );
 }
 
-function Sidebar({ expanded, onToggle }) {
+function Sidebar({ expanded, onToggle, activePage, onNavigate }) {
   return (
     <aside className={`sidebar ${expanded ? 'expanded' : 'collapsed'}`}>
       <Box className="sidebar-brand"><ProductMark compact /></Box>
@@ -774,9 +960,22 @@ function Sidebar({ expanded, onToggle }) {
         </IconButton>
       </Tooltip>
       <nav className="sidebar-nav">
-        {navItems.map(({ label, icon: Icon, active, badge }) => (
+        {navItems.map(({ id, label, icon: Icon, badge }) => (
           <Tooltip key={label} title={expanded ? '' : label} placement="right">
-            <Box className={`nav-item ${active ? 'active' : ''}`} aria-label={label}>
+            <Box
+              className={`nav-item ${activePage === id ? 'active' : ''}`}
+              aria-label={label}
+              aria-current={activePage === id ? 'page' : undefined}
+              role={id ? 'button' : undefined}
+              tabIndex={id ? 0 : undefined}
+              onClick={() => id && onNavigate(id)}
+              onKeyDown={(event) => {
+                if (id && (event.key === 'Enter' || event.key === ' ')) {
+                  event.preventDefault();
+                  onNavigate(id);
+                }
+              }}
+            >
               <Badge badgeContent={badge} color="error" max={9}>
                 <Icon fontSize="small" />
               </Badge>
@@ -786,12 +985,12 @@ function Sidebar({ expanded, onToggle }) {
         ))}
       </nav>
       <Box className="sidebar-bottom">
-        <Tooltip title={expanded ? '' : '系統設定'} placement="right">
-          <Box className="nav-item" aria-label="系統設定">
-            <SettingsOutlined fontSize="small" />
-            <Typography component="span">系統設定</Typography>
+        <Box className="sidebar-account" aria-label="目前登入帳號：王日通，調度管理員">
+          <Box className="sidebar-account-copy">
+            <Typography className="sidebar-account-name" component="span">王日通</Typography>
+            <Typography className="sidebar-account-role" component="span">調度管理員</Typography>
           </Box>
-        </Tooltip>
+        </Box>
       </Box>
     </aside>
   );
@@ -890,25 +1089,44 @@ function MapFocusHandler({ request, vehicles }) {
   return null;
 }
 
-function VehicleInfo({ vehicle, onLocate }) {
-  const riskStationCount = vehicle.tasks.filter((task) => task.risk && ['running', 'ready'].includes(task.state)).length;
+function VehicleInfo({ vehicle, onLocate, assignedCustomer, assignedDriver }) {
   const hasAbnormal = vehicleHasAbnormal(vehicle);
-  const abnormalMessage = riskStationCount > 0
-    ? `已延遲，可能影響後續 ${riskStationCount} 個站點`
-    : '目前已有站點延遲';
+  const isOtherBusinessVehicle = vehicle.serviceType === 'other-business';
+  const activeVehicleTask = vehicle.tasks.find((task) => task.start <= NOW_HOUR && task.end > NOW_HOUR);
+  const activeOtherBusinessCustomer = activeVehicleTask?.businessType === 'other-business'
+    ? activeVehicleTask.customer
+    : null;
+  const displayedOtherBusinessCustomer = assignedCustomer ?? activeOtherBusinessCustomer;
+  const hasCurrentOrFutureTask = vehicle.tasks.some((task) => task.end > NOW_HOUR) || Boolean(assignedCustomer);
+  const displayedDriver = assignedDriver ?? (vehicle.driver === '待指派' ? null : vehicle.driver);
+  const abnormalMessage = '行程延遲，可能影響後續站點';
   return (
     <Box className={`vehicle-info ${hasAbnormal ? 'has-risk' : ''}`}>
       <Box sx={{ width: '100%' }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ width: '100%' }}>
           <Typography variant="body2" fontWeight={750}>{vehicle.id}</Typography>
         </Stack>
-        <Typography variant="caption" color="text.secondary">
-          <Box component="span" className="vehicle-driver">{vehicle.driver}</Box>
-        </Typography>
-        <Stack className="vehicle-route-meta" direction="row" alignItems="center" spacing={1}>
-          <Typography variant="caption">路線 {vehicle.routeName}</Typography>
-          <Typography variant="caption">便次 {vehicle.trip}</Typography>
-        </Stack>
+        {isOtherBusinessVehicle && !hasCurrentOrFutureTask ? (
+          <Typography className="vehicle-no-followup" variant="caption">無當前任務</Typography>
+        ) : (
+          <>
+            {displayedDriver && (
+              <Typography variant="caption" color="text.secondary">
+                <Box component="span" className="vehicle-driver">{displayedDriver}</Box>
+              </Typography>
+            )}
+            <Stack className="vehicle-route-meta" direction="row" alignItems="center" spacing={1}>
+              {isOtherBusinessVehicle && displayedOtherBusinessCustomer ? (
+                <Typography variant="caption">客戶 {displayedOtherBusinessCustomer}</Typography>
+              ) : (
+                <>
+                  <Typography variant="caption">路線 {vehicle.routeName}</Typography>
+                  <Typography variant="caption">便次 {vehicle.trip}</Typography>
+                </>
+              )}
+            </Stack>
+          </>
+        )}
       </Box>
       <Stack className="vehicle-actions" direction="row" spacing={0.2}>
         <Tooltip title="地圖定位">
@@ -920,7 +1138,7 @@ function VehicleInfo({ vehicle, onLocate }) {
       {hasAbnormal && (
         <Tooltip title={abnormalMessage} arrow>
           <Box className="vehicle-risk-summary" role="img" aria-label={abnormalMessage}>
-            <WarningAmberRounded />
+            <WarningRounded />
           </Box>
         </Tooltip>
       )}
@@ -942,14 +1160,14 @@ function createVehicleMapIcon(vehicle, hasAbnormal, focused, emphasized) {
 
 function VehicleMapPin({ vehicle, focused, emphasized, onOpen }) {
   const task = getRelevantVehicleTask(vehicle);
-  const riskStationCount = vehicle.tasks.filter((item) => item.risk && ['running', 'ready'].includes(item.state)).length;
+  const activeTask = vehicle.tasks.find((item) => item.start <= NOW_HOUR && item.end > NOW_HOUR);
+  const isActiveOtherBusiness = Boolean(
+    activeTask
+    && vehicle.serviceType === 'other-business'
+    && activeTask.customer,
+  );
   const hasAbnormal = vehicleHasAbnormal(vehicle);
-  const abnormalMessage = `後續 ${riskStationCount} 個站點可能延遲`;
-  const taskTimeStatus = task.state === 'delayed' && task.delay
-    ? { state: 'delayed', label: `（延遲 ${Math.abs(Number(task.delay))} 分）` }
-    : task.state === 'early' && task.earlyMinutes
-      ? { state: 'early', label: `提早 ${task.earlyMinutes} 分` }
-      : null;
+  const abnormalMessage = '行程延遲，可能影響後續站點';
   const markerIcon = createVehicleMapIcon(vehicle, hasAbnormal, focused, emphasized);
 
   return (
@@ -966,27 +1184,26 @@ function VehicleMapPin({ vehicle, focused, emphasized, onOpen }) {
           <Stack className="map-tooltip-card-header" direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
             <Box>
               <Typography variant="subtitle2" fontWeight={750}>{vehicle.id}</Typography>
+              {hasAbnormal && (
+                <Stack className="map-tooltip-attention-status risk" direction="row" alignItems="center" spacing={0.5}>
+                  <WarningAmberOutlined />
+                  <Typography variant="caption">{abnormalMessage}</Typography>
+                </Stack>
+              )}
             </Box>
-            {hasAbnormal && (
-              <Stack className="map-tooltip-attention-status risk" direction="row" alignItems="center" spacing={0.5}>
-                <WarningAmberRounded />
-                <Typography variant="caption">{abnormalMessage}</Typography>
-              </Stack>
-            )}
           </Stack>
           <Box className="map-tooltip-row"><span>當前司機</span><b>{vehicle.driver}</b></Box>
-          <Box className="map-tooltip-row"><span>路線／便次</span><b>{vehicle.routeName}／{vehicle.trip}</b></Box>
+          {isActiveOtherBusiness ? (
+            <Box className="map-tooltip-row"><span>客戶（他向業務）</span><b>{activeTask.customer}</b></Box>
+          ) : (
+            <Box className="map-tooltip-row"><span>路線／便次</span><b>{vehicle.routeName}／{vehicle.trip}</b></Box>
+          )}
           <Box className="map-tooltip-row"><span>站點</span><b>{task.station}</b></Box>
           <Box className="map-tooltip-row"><span>地址</span><b>{task.address}</b></Box>
           <Box className="map-tooltip-row">
-            <span>預計時間</span>
+            <span>規劃時間</span>
             <b className="map-tooltip-time-value">
               <span className="map-time-range">{formatHour(task.start)}–{formatHour(task.end)}</span>
-              {taskTimeStatus && (
-                <span className={`map-tooltip-time-status ${taskTimeStatus.state}`}>
-                  {taskTimeStatus.label}
-                </span>
-              )}
             </b>
           </Box>
         </Box>
@@ -995,42 +1212,91 @@ function VehicleMapPin({ vehicle, focused, emphasized, onOpen }) {
   );
 }
 
-function TaskBlock({ task, vehicle, compareMode, highlighted, onHighlight, onLocate }) {
+function TaskBlock({ task, vehicle, compareMode, scaleMinutes, highlighted, onHighlight, onLocate, onReassign }) {
   const meta = statusMeta[task.state] || statusMeta.running;
-  const left = toPercent(task.start);
-  const width = ((task.end - task.start) / HOUR_COUNT) * 100;
   const planned = getTaskPlannedRange(task);
   const plannedLeft = toPercent(planned.start);
   const plannedWidth = ((planned.end - planned.start) / HOUR_COUNT) * 100;
-  const isForecast = task.start > NOW_HOUR || task.state === 'ready';
-  const currentTimeLabel = ['early', 'delayed'].includes(task.state)
-    ? '實際時間'
-    : isForecast
-      ? '目前預估'
-      : task.end <= NOW_HOUR
-        ? '實際時間'
-        : '目前執行';
-  const differenceMinutes = Math.round((task.start - planned.start) * 60);
-  const differenceLabel = task.state === 'delayed'
-    ? `延遲 ${Math.abs(differenceMinutes)} 分`
-    : `提早 ${Math.abs(differenceMinutes)} 分`;
-  const showConfirmedDifference = differenceMinutes !== 0 && ['early', 'delayed'].includes(task.state);
+  const hasStarted = task.state !== 'ready' && task.start <= NOW_HOUR;
+  const hasDeparted = hasStarted && task.end <= NOW_HOUR;
+  const actualLineEnd = hasDeparted ? task.end : Math.min(NOW_HOUR, task.end);
+  const actualLeft = toPercent(task.start);
+  const actualWidth = ((actualLineEnd - task.start) / HOUR_COUNT) * 100;
+  const arrivalDifferenceMinutes = Math.round((task.start - planned.start) * 60);
+  const departureDifferenceMinutes = Math.round((task.end - planned.end) * 60);
+  const getDifferenceState = (minutes) => (
+    minutes < -ON_TIME_TOLERANCE_MINUTES
+      ? 'early'
+      : minutes > ON_TIME_TOLERANCE_MINUTES
+        ? 'delayed'
+        : 'ontime'
+  );
+  const getDifferenceLabel = (minutes, eventLabel) => (minutes < -ON_TIME_TOLERANCE_MINUTES
+    ? `提早${eventLabel} ${Math.abs(minutes)} 分`
+    : minutes > ON_TIME_TOLERANCE_MINUTES
+      ? `延遲${eventLabel} ${minutes} 分`
+      : `準時${eventLabel}`);
+  const getDifferenceValue = (minutes) => (minutes < -ON_TIME_TOLERANCE_MINUTES
+    ? `提早 ${Math.abs(minutes)} 分`
+    : minutes > ON_TIME_TOLERANCE_MINUTES
+      ? `延遲 ${minutes} 分`
+      : '準時');
+  const arrivalDifferenceState = getDifferenceState(arrivalDifferenceMinutes);
+  const arrivalDifferenceLabel = getDifferenceLabel(arrivalDifferenceMinutes, '抵達');
+  const arrivalDifferenceValue = getDifferenceValue(arrivalDifferenceMinutes);
+  const departureDifferenceState = getDifferenceState(departureDifferenceMinutes);
+  const departureDifferenceLabel = getDifferenceLabel(departureDifferenceMinutes, '離站');
+  const departureDifferenceValue = getDifferenceValue(departureDifferenceMinutes);
+  const arrivalMeta = timelineActualStatusMeta[arrivalDifferenceState];
+  const departureMeta = timelineActualStatusMeta[departureDifferenceState];
+  const arrivalStatusLabel = arrivalDifferenceState === 'ontime' ? '' : arrivalDifferenceValue;
+  const departureStatusLabel = hasDeparted && departureDifferenceState !== 'ontime'
+    ? departureDifferenceValue
+    : '';
+  const actualBarState = hasDeparted
+    ? departureDifferenceState
+    : arrivalDifferenceState;
+  const actualBarMeta = timelineActualStatusMeta[actualBarState];
+  const showActualStatusLine = compareMode && hasStarted && actualLineEnd > task.start && task.state !== 'offline';
+  const showInlineDifferenceLabels = scaleMinutes < 60;
+  const showTimeDifference = arrivalDifferenceState !== 'ontime'
+    || (hasDeparted && departureDifferenceState !== 'ontime');
+  const hasEtaWarning = task.risk && Number.isFinite(task.projectedDelay);
+  const projectedArrival = hasEtaWarning
+    ? planned.start + (task.projectedDelay / 60)
+    : null;
+  const actualRight = toPercent(task.end);
   const taskTrip = task.confirmedInsertion ? vehicle.trip : task.id.split('-').at(-1);
   const tooltipContent = (
     <Box className="station-tooltip-card">
       <Stack className="station-tooltip-header" direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
         <Typography variant="subtitle2" fontWeight={750}>{task.station}</Typography>
-        <IconButton
-          className="station-tooltip-map-button"
-          size="small"
-          aria-label={`在地圖定位 ${vehicle.id}`}
-          onClick={(event) => {
-            event.stopPropagation();
-            onLocate(vehicle, task);
-          }}
-        >
-          <PinDropOutlined />
-        </IconButton>
+        <Tooltip title="變更指派">
+          <IconButton
+            className="station-tooltip-edit-button"
+            size="small"
+            aria-label="變更指派"
+            onClick={(event) => {
+              event.stopPropagation();
+              onReassign(vehicle, task);
+            }}
+          >
+            <EditOutlined />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="地圖定位">
+          <IconButton
+            className="station-tooltip-map-button"
+            size="small"
+            aria-label={`在地圖定位 ${vehicle.id}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onLocate(vehicle, task);
+            }}
+          >
+            <PinDropOutlined />
+          </IconButton>
+        </Tooltip>
       </Stack>
       <Box className="station-tooltip-row">
         <Typography component="span">地址</Typography>
@@ -1044,27 +1310,45 @@ function TaskBlock({ task, vehicle, compareMode, highlighted, onHighlight, onLoc
         <Typography component="span">便次</Typography>
         <Typography component="b">{taskTrip}</Typography>
       </Box>
-      {compareMode ? (
+      <Box className="station-tooltip-row">
+        <Typography component="span">規劃時間</Typography>
+        <Typography component="b">
+          {hasEtaWarning ? formatHour(planned.start) : `${formatHour(planned.start)}–${formatHour(planned.end)}`}
+        </Typography>
+      </Box>
+      {hasEtaWarning && (
+        <Box className="station-tooltip-row eta-warning-row">
+          <Typography component="span">預計抵達</Typography>
+          <Typography component="b">
+            {formatHour(projectedArrival)}
+            <Box component="span" className="eta-delay">（預計延遲 {task.projectedDelay} 分）</Box>
+          </Typography>
+        </Box>
+      )}
+      {showActualStatusLine && (
         <>
           <Box className="station-tooltip-row">
-            <Typography component="span">原規劃</Typography>
-            <Typography component="b">{formatHour(planned.start)}–{formatHour(planned.end)}</Typography>
-          </Box>
-          <Box className="station-tooltip-row">
-            <Typography component="span">{currentTimeLabel}</Typography>
+            <Typography component="span">實際執行</Typography>
             <Typography component="b">
-              {formatHour(task.start)}–{formatHour(task.end)}
-              {showConfirmedDifference && (
-                <Box component="span" className={`time-difference ${task.state}`}>({differenceLabel})</Box>
-              )}
+              {hasDeparted ? `${formatHour(task.start)}–${formatHour(task.end)}` : `${formatHour(task.start)}–進行中`}
             </Typography>
           </Box>
+          {showTimeDifference && (
+            <Box className="station-tooltip-row time-difference-row">
+              <Typography component="b" className="station-difference-summary">
+                <Box component="span" className="difference-event-label">抵達</Box>
+                <Box component="span" className={`time-difference ${arrivalDifferenceState}`}>{arrivalDifferenceValue}</Box>
+                {hasDeparted && (
+                  <>
+                    <Box component="span" className="difference-separator">｜</Box>
+                    <Box component="span" className="difference-event-label">離站</Box>
+                    <Box component="span" className={`time-difference ${departureDifferenceState}`}>{departureDifferenceValue}</Box>
+                  </>
+                )}
+              </Typography>
+            </Box>
+          )}
         </>
-      ) : (
-        <Box className="station-tooltip-row">
-          <Typography component="span">預計時間</Typography>
-          <Typography component="b">{formatHour(task.start)}–{formatHour(task.end)}</Typography>
-        </Box>
       )}
     </Box>
   );
@@ -1074,31 +1358,66 @@ function TaskBlock({ task, vehicle, compareMode, highlighted, onHighlight, onLoc
   };
   return (
     <>
-      {compareMode && (
-        <Tooltip arrow placement="bottom" title={tooltipContent} slotProps={tooltipSlotProps}>
-          <Box
-            className={`timeline-task planned-task ${highlighted ? 'paired-highlight' : ''}`}
-            sx={{ left: `${plannedLeft}%`, width: `${plannedWidth}%` }}
-            onMouseEnter={() => onHighlight(task.id)}
-            onMouseLeave={() => onHighlight(null)}
-            aria-label={`${task.station} 原派車規劃`}
-          />
-        </Tooltip>
-      )}
       <Tooltip arrow placement="bottom" title={tooltipContent} slotProps={tooltipSlotProps}>
         <Box
-          className={`timeline-task state-${task.state} ${compareMode ? 'comparison-current' : ''} ${highlighted ? 'paired-highlight' : ''}`}
-          sx={{ left: `${left}%`, width: `${width}%`, bgcolor: meta.bg, color: '#29384A', borderColor: `${meta.color}55`, '--task-status-color': meta.color }}
+          className={`timeline-task planned-task ${hasEtaWarning ? 'has-eta-warning' : ''} ${highlighted ? 'paired-highlight' : ''}`}
+          sx={{ left: `${plannedLeft}%`, width: `${plannedWidth}%`, '--task-status-color': meta.color }}
           onMouseEnter={() => onHighlight(task.id)}
           onMouseLeave={() => onHighlight(null)}
+          aria-label={`${task.station} 原派車規劃`}
         >
-          <Stack direction="row" spacing={0.5} alignItems="center" sx={{ minWidth: 0 }}>
+          <Stack className="timeline-task-label" direction="row" spacing={0.5} alignItems="center" sx={{ minWidth: 0 }}>
+            {hasEtaWarning && <AccessTimeRounded className="timeline-task-eta-warning" aria-hidden="true" />}
             <Typography component="span" noWrap>{task.station}</Typography>
           </Stack>
-          {task.delay && <b>延遲 {Math.abs(Number(task.delay))} 分</b>}
-          {task.state === 'early' && task.earlyMinutes && <b>提早 {task.earlyMinutes} 分</b>}
         </Box>
       </Tooltip>
+      {showActualStatusLine && (
+        <>
+          {arrivalDifferenceState !== 'ontime' && (
+            <Box
+              className={`actual-endpoint-tick arrival state-${arrivalDifferenceState}`}
+              sx={{ left: `${actualLeft}%`, '--actual-status-color': arrivalMeta.color }}
+              aria-hidden="true"
+            />
+          )}
+          {hasDeparted && departureDifferenceState !== 'ontime' && (
+            <Box
+              className={`actual-endpoint-tick departure state-${departureDifferenceState}`}
+              sx={{ left: `${actualRight}%`, '--actual-status-color': departureMeta.color }}
+              aria-hidden="true"
+            />
+          )}
+          {showInlineDifferenceLabels && arrivalStatusLabel && (
+            <Box
+              className={`actual-difference-label arrival state-${arrivalDifferenceState}`}
+              sx={{ left: `${actualLeft}%`, '--actual-status-color': arrivalMeta.color }}
+              aria-hidden="true"
+            >{arrivalStatusLabel}</Box>
+          )}
+          {showInlineDifferenceLabels && departureStatusLabel && (
+            <Box
+              className={`actual-difference-label departure state-${departureDifferenceState}`}
+              sx={{ left: `${actualRight}%`, '--actual-status-color': departureMeta.color }}
+              aria-hidden="true"
+            >{departureStatusLabel}</Box>
+          )}
+          <Tooltip arrow placement="bottom" title={tooltipContent} slotProps={tooltipSlotProps}>
+            <Box
+              className={`timeline-task state-${task.state} comparison-current ${highlighted ? 'paired-highlight' : ''}`}
+              sx={{
+                left: `${actualLeft}%`,
+                width: `${actualWidth}%`,
+                bgcolor: actualBarMeta?.bg ?? '#DCE4EC',
+                borderColor: actualBarMeta ? `${actualBarMeta.color}77` : '#91A1B2',
+              }}
+              onMouseEnter={() => onHighlight(task.id)}
+              onMouseLeave={() => onHighlight(null)}
+              aria-label={`${task.station}，實際執行，${arrivalDifferenceLabel}${hasDeparted ? `，${departureDifferenceLabel}` : '，尚未離站'}`}
+            />
+          </Tooltip>
+        </>
+      )}
     </>
   );
 }
@@ -1119,7 +1438,7 @@ function CandidateSlot({ candidate, selectedTask, active, previewing, onSelect, 
         <Typography component="b">{selectedTask.window}</Typography>
       </Box>
     </Box>
-  ) : `候選時段 ${formatHour(candidate.start)}–${formatHour(candidate.end)}`;
+  ) : '插入司機空擋';
   return (
     <Tooltip
       arrow
@@ -1158,16 +1477,39 @@ function CandidateSlot({ candidate, selectedTask, active, previewing, onSelect, 
         }}
       >
         {!active && !dragOver && <MoreTimeRounded fontSize="small" />}
-        <span>{dragOver ? '放開以預覽插單' : active ? selectedTask.customer : '候選時段'}</span>
+        {active && !dragOver ? (
+          <>
+            <span className="candidate-slot-station">{selectedTask.station ?? selectedTask.customer}</span>
+            <span className="candidate-slot-preview-status">（預覽）</span>
+          </>
+        ) : (
+          <span>{dragOver ? '放開以選擇司機' : '空檔'}</span>
+        )}
       </Box>
     </Tooltip>
   );
 }
 
-function Timeline({ vehicles, candidates, selectedTask, activeCandidate, hoveredCandidate, onSelectCandidate, onHoverCandidate, onDropTask, onLocateVehicle, insertedTasks, highlightedVehicleId, compareMode, dragActive = false }) {
+function Timeline({ vehicles, candidates, selectedTask, selectedDriverName, hasAvailableCandidates, activeCandidate, hoveredCandidate, onSelectCandidate, onHoverCandidate, onDropTask, onLocateVehicle, onReassignTask, insertedTasks, highlightedVehicleId, compareMode, scaleMinutes, showRequestedWindow = false, dragActive = false }) {
   const [highlightedTaskId, setHighlightedTaskId] = useState(null);
+  const timelineWidthPercent = TIMELINE_WIDTH_PERCENT_BY_SCALE[scaleMinutes] ?? 100;
+  const requestedWindow = selectedTask ? getTaskWindowRange(selectedTask) : null;
+  const requestedWindowLeft = requestedWindow ? toPercent(requestedWindow.start) : 0;
+  const requestedWindowWidth = requestedWindow
+    ? ((requestedWindow.end - requestedWindow.start) / HOUR_COUNT) * 100
+    : 0;
+  const selectedDriverCandidate = selectedDriverName
+    ? candidates.find((candidate) => candidate.driverName === selectedDriverName)
+    : null;
+  const candidateFocusVehicleId = hoveredCandidate?.vehicleId
+    ?? activeCandidate?.vehicleId
+    ?? selectedDriverCandidate?.vehicleId
+    ?? null;
   return (
-    <Box className={`timeline-shell ${compareMode ? 'compare-mode' : ''} ${dragActive ? 'drag-active' : ''}`}>
+    <Box
+      className={`timeline-shell ${compareMode ? 'compare-mode' : ''} ${showRequestedWindow ? 'requested-window-mode' : ''} ${dragActive ? 'drag-active' : ''}`}
+      style={{ '--timeline-row-width': `${timelineWidthPercent}%` }}
+    >
       <Box className="timeline-header-row">
         <Box className="vehicle-column-heading">
           <Typography variant="caption" fontWeight={700}>車輛／當前司機及任務</Typography>
@@ -1181,18 +1523,41 @@ function Timeline({ vehicles, candidates, selectedTask, activeCandidate, hovered
           <Box className="now-axis-marker" sx={{ left: `${toPercent(14.5)}%` }}>
             <span>現在</span>
           </Box>
+          {showRequestedWindow && requestedWindow && (
+            <Box
+              className="requested-window-header"
+              sx={{ left: `${requestedWindowLeft}%`, width: `${requestedWindowWidth}%` }}
+            >
+              <span>指定時段</span>
+            </Box>
+          )}
         </Box>
       </Box>
       {vehicles.map((vehicle) => {
         const candidate = candidates.find((item) => item.vehicleId === vehicle.id);
         const inserted = insertedTasks.filter((item) => item.vehicleId === vehicle.id);
         return (
-          <Box id={`timeline-vehicle-${vehicle.id}`} className={`timeline-row ${highlightedVehicleId === vehicle.id ? 'map-highlighted' : ''} ${(hoveredCandidate || activeCandidate)?.vehicleId === vehicle.id ? 'candidate-highlighted' : ''}`} key={vehicle.id}>
-            <VehicleInfo vehicle={vehicle} onLocate={onLocateVehicle} />
+          <Box
+            id={`timeline-vehicle-${vehicle.id}`}
+            className={`timeline-row ${highlightedVehicleId === vehicle.id && candidateFocusVehicleId !== vehicle.id ? 'map-highlighted' : ''} ${candidateFocusVehicleId === vehicle.id ? 'candidate-highlighted' : ''}`}
+            key={vehicle.id}
+          >
+            <VehicleInfo
+              vehicle={vehicle}
+              onLocate={onLocateVehicle}
+              assignedCustomer={inserted.at(-1)?.task.customer}
+              assignedDriver={inserted.at(-1)?.assignedDriver}
+            />
             <Box className="timeline-track">
               {hourMarks.slice(0, -1).map((hour, index) => (
                 <Box key={hour} className="hour-gridline" sx={{ left: `${(index / HOUR_COUNT) * 100}%` }} />
               ))}
+              {showRequestedWindow && requestedWindow && (
+                <Box
+                  className="requested-window-band"
+                  sx={{ left: `${requestedWindowLeft}%`, width: `${requestedWindowWidth}%` }}
+                />
+              )}
               <Box className="now-line" sx={{ left: `${toPercent(14.5)}%` }} />
               {vehicle.tasks.map((task) => (
                 <TaskBlock
@@ -1200,16 +1565,18 @@ function Timeline({ vehicles, candidates, selectedTask, activeCandidate, hovered
                   task={task}
                   vehicle={vehicle}
                   compareMode={compareMode}
+                  scaleMinutes={scaleMinutes}
                   highlighted={highlightedTaskId === task.id}
                   onHighlight={setHighlightedTaskId}
                   onLocate={onLocateVehicle}
+                  onReassign={onReassignTask}
                 />
               ))}
               {inserted.map((item) => {
                 const confirmedTask = {
                   ...item.task,
                   confirmedInsertion: true,
-                  station: item.task.customer,
+                  station: item.task.station ?? item.task.customer,
                   address: item.task.address ?? item.task.pickup,
                   assignedDriver: item.assignedDriver,
                   start: item.candidate.start,
@@ -1226,9 +1593,11 @@ function Timeline({ vehicles, candidates, selectedTask, activeCandidate, hovered
                     task={confirmedTask}
                     vehicle={vehicle}
                     compareMode={false}
+                    scaleMinutes={scaleMinutes}
                     highlighted={highlightedTaskId === confirmedTask.id}
                     onHighlight={setHighlightedTaskId}
                     onLocate={onLocateVehicle}
+                    onReassign={onReassignTask}
                   />
                 );
               })}
@@ -1247,16 +1616,16 @@ function Timeline({ vehicles, candidates, selectedTask, activeCandidate, hovered
           </Box>
         );
       })}
-      {selectedTask && candidates.length === 0 && (
+      {selectedTask && !hasAvailableCandidates && (
         <Alert severity="warning" className="no-candidate-alert">
-          91 台車皆因硬限制未列入候選，詳細排除原因請見右側「硬限制檢查」。
+          目前沒有同時符合車輛與司機可用條件的組合。
         </Alert>
       )}
     </Box>
   );
 }
 
-function OtherTaskCard({ task, onSelect, onDragStart, onDragEnd }) {
+function OtherTaskCard({ task, onSelect, onDragStart, onDragEnd, onViewLocation }) {
   return (
     <Paper
       variant="outlined"
@@ -1265,7 +1634,7 @@ function OtherTaskCard({ task, onSelect, onDragStart, onDragEnd }) {
       onDragEnd={onDragEnd}
       onClick={() => onSelect?.(task)}
       className="other-task-card"
-      aria-label={`${task.customer}，可拖曳至時間軸安排，或點擊查看候選車輛`}
+      aria-label={`${task.customer}，點擊指派司機與車輛`}
     >
       <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
         <Box>
@@ -1274,9 +1643,28 @@ function OtherTaskCard({ task, onSelect, onDragStart, onDragEnd }) {
           </Stack>
           <Typography className="other-task-station" variant="body2" mt={0.5}>{task.customer}</Typography>
         </Box>
-        <Tooltip title="拖曳至時間軸">
-          <DragIndicatorRounded className="other-task-drag-handle" aria-hidden="true" />
-        </Tooltip>
+        <Stack className="other-task-hover-actions" direction="row" spacing={0.25} alignItems="center">
+          <Tooltip title="地圖定位">
+            <IconButton
+              className="other-task-location-button"
+              size="small"
+              draggable={false}
+              aria-label={`查看 ${task.customer} 定位`}
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                onViewLocation?.(task);
+              }}
+            >
+              <PinDropOutlined />
+            </IconButton>
+          </Tooltip>
+          {onDragStart && (
+            <Tooltip title="拖移至時間軸">
+              <DragIndicatorRounded className="other-task-drag-handle" aria-hidden="true" />
+            </Tooltip>
+          )}
+        </Stack>
       </Stack>
       <Stack className="task-summary-meta" spacing={0.7}>
         <Stack direction="row" spacing={0.7} alignItems="center"><LocationOnOutlined className="task-mini-icon" /><Typography variant="caption">{task.address ?? task.pickup}</Typography></Stack>
@@ -1288,38 +1676,63 @@ function OtherTaskCard({ task, onSelect, onDragStart, onDragEnd }) {
 
 function OrderQueuePanel({
   open,
+  width,
   tasks,
   onClose,
   onSelect,
   selectedTask,
   onBackToQueue,
   candidates,
-  vehicles,
+  selectedDriverName,
   activeCandidate,
   hoveredCandidate,
+  resolvedCandidatePairs,
+  onSelectDriver,
   onSelectCandidate,
   onHoverCandidate,
+  onResolveImpact,
   onConfirm,
+  confirming,
+  onFocusTimeline,
   onDragStart,
   onDragEnd,
   onViewLocation,
+  onResizeStart,
+  onResizeKeyDown,
 }) {
   if (!open) return null;
 
   return (
     <Paper component="aside" square elevation={0} className="order-queue-paper" aria-label="待插單工作區">
+      <Box
+        className="order-queue-resize-handle"
+        role="separator"
+        tabIndex={0}
+        aria-label="調整待插單面板寬度"
+        aria-orientation="vertical"
+        aria-valuemin={Math.min(320, Math.floor(window.innerWidth * 0.35))}
+        aria-valuemax={Math.floor(window.innerWidth * 0.35)}
+        aria-valuenow={Math.round(width)}
+        onPointerDown={onResizeStart}
+        onKeyDown={onResizeKeyDown}
+      />
       {selectedTask ? (
         <TaskPanel
           embedded
           selectedTask={selectedTask}
           onDragStart={onDragStart}
           candidates={candidates}
-          vehicles={vehicles}
+          selectedDriverName={selectedDriverName}
           activeCandidate={activeCandidate}
           hoveredCandidate={hoveredCandidate}
+          resolvedCandidatePairs={resolvedCandidatePairs}
+          onSelectDriver={onSelectDriver}
           onSelectCandidate={onSelectCandidate}
           onHoverCandidate={onHoverCandidate}
+          onResolveImpact={onResolveImpact}
           onConfirm={onConfirm}
+          confirming={confirming}
+          onFocusTimeline={onFocusTimeline}
           onClearSelection={onBackToQueue}
           onClosePanel={onClose}
           onViewLocation={onViewLocation}
@@ -1335,9 +1748,6 @@ function OrderQueuePanel({
             </Stack>
           </Box>
           <Box className="order-queue-list">
-            <Typography className="order-queue-list-summary" variant="caption">
-              可拖曳訂單至時間軸
-            </Typography>
             {tasks.length ? (
               <Stack className="order-queue-items" spacing={0}>
                 {tasks.map((task) => (
@@ -1347,13 +1757,13 @@ function OrderQueuePanel({
                     onSelect={onSelect}
                     onDragStart={onDragStart}
                     onDragEnd={onDragEnd}
+                    onViewLocation={onViewLocation}
                   />
                 ))}
               </Stack>
             ) : (
               <Box className="order-queue-empty">
-                <Typography variant="subtitle2">找不到符合條件的訂單</Typography>
-                <Typography variant="caption" color="text.secondary">請調整搜尋關鍵字後再試一次。</Typography>
+                <Typography variant="subtitle2">尚無待安插的訂單</Typography>
               </Box>
             )}
           </Box>
@@ -1363,13 +1773,171 @@ function OrderQueuePanel({
   );
 }
 
-function CandidateCard({ candidate, vehicle, task, active, previewing, onSelect, onHover }) {
-  const orderedTasks = [...vehicle.tasks].sort((a, b) => a.start - b.start);
-  const previousTask = orderedTasks.filter((item) => item.end <= candidate.start).at(-1) ?? null;
-  const nextTask = orderedTasks.find((item) => item.start >= candidate.end) ?? null;
-  const tripNumber = (item) => item.id.split('-').at(-1);
-  const driverOptions = getVehicleDriverOptions(vehicle);
-  const displayedDriver = driverOptions[0];
+function ResourceFlow({ label, resourceName, previousTask, task, nextTask }) {
+  const taskLabel = (item) => item ? `${item.station} ${formatHour(item.start)}` : '無既定任務';
+  return (
+    <Box className="resource-flow-row">
+      <Box className="resource-flow-heading">
+        <Typography component="span">{label}</Typography>
+        <Typography component="b">{resourceName}</Typography>
+      </Box>
+      <Box className="resource-flow-sequence">
+        <span>{taskLabel(previousTask)}</span>
+        <b>{task.customer} {formatHour(task.start ?? 0)}</b>
+        <span>{taskLabel(nextTask)}</span>
+      </Box>
+    </Box>
+  );
+}
+
+function DriverCandidateCard({ candidate, vehicleCandidates, selected, activeCandidate, onSelectDriver, onSelectVehicle }) {
+  const selectedVehicleCandidate = selected && activeCandidate?.driverName === candidate.driverName
+    ? activeCandidate
+    : null;
+  const impactCandidate = selectedVehicleCandidate ?? candidate;
+  const hasDownstreamImpact = impactCandidate.hasDownstreamConflict;
+  const selectVehicle = (event) => {
+    const selectedCandidate = vehicleCandidates.find((item) => item.pairId === event.target.value);
+    if (selectedCandidate) onSelectVehicle(selectedCandidate);
+  };
+  return (
+    <Paper
+      variant="outlined"
+      className={`candidate-card driver-candidate-card ${selected ? 'active' : ''}`}
+      onClick={() => onSelectDriver(selected ? null : candidate.driverName)}
+    >
+      <Box className="candidate-driver-heading">
+        <Typography className="driver-candidate-name" variant="body2">{candidate.driverName}</Typography>
+        <Box className="candidate-work-summary">
+          <Typography component="span">預估工時</Typography>
+          <Typography component="b">{candidate.driverWorkHours}</Typography>
+        </Box>
+      </Box>
+      <Box className="candidate-pair-summary">
+        <Box className="candidate-task-timeline">
+          <Box className="candidate-task-node">
+            <Box className="candidate-task-node-marker" />
+            <Box className="candidate-task-node-body">
+              <Typography component="span">上一任務</Typography>
+              <Typography component="b">
+                {candidate.previousDriverTask
+                  ? `${candidate.previousDriverTask.station}・${formatHour(candidate.previousDriverTask.end)} 需離站`
+                  : '-'}
+              </Typography>
+            </Box>
+          </Box>
+          <Box className="candidate-task-node">
+            <Box className="candidate-task-node-marker" />
+            <Box className="candidate-task-node-body">
+              <Typography component="span">下一任務</Typography>
+              <Typography component="b">
+                {candidate.nextDriverTask
+                  ? `${candidate.nextDriverTask.station}・${formatHour(candidate.nextDriverTask.start)} 需抵達`
+                  : '-'}
+              </Typography>
+              {hasDownstreamImpact && (
+                <Stack className="candidate-impact-message" direction="row" spacing={0.5} alignItems="center">
+                  <WarningRounded />
+                  <Typography variant="caption">插單後的任務銜接時間不足</Typography>
+                </Stack>
+              )}
+            </Box>
+          </Box>
+        </Box>
+      </Box>
+      <Collapse in={selected} unmountOnExit>
+        <Box className="driver-vehicle-picker" onClick={(event) => event.stopPropagation()}>
+          <TextField
+            select
+            fullWidth
+            size="small"
+            label="車輛"
+            value={selectedVehicleCandidate?.pairId ?? ''}
+            onChange={selectVehicle}
+            slotProps={{
+              select: {
+                renderValue: (pairId) => vehicleCandidates.find((item) => item.pairId === pairId)?.vehicleId ?? '',
+                MenuProps: {
+                  slotProps: {
+                    paper: {
+                      className: 'resource-select-menu-paper',
+                      sx: { maxHeight: RESOURCE_MENU_MAX_HEIGHT, overflowY: 'auto' },
+                    },
+                    list: { sx: { py: 0.5 } },
+                  },
+                },
+              },
+            }}
+          >
+            {vehicleCandidates.map((vehicleCandidate) => (
+              <MenuItem key={vehicleCandidate.pairId} value={vehicleCandidate.pairId}>
+                <Box className="vehicle-option-content">
+                  <Typography component="b">{vehicleCandidate.vehicleId}</Typography>
+                  {vehicleCandidate.nextVehicleTask && (
+                    <Typography component="span">
+                      {`下一任務 ${vehicleCandidate.nextVehicleTask.station}・${formatHour(vehicleCandidate.nextVehicleTask.start)}`}
+                    </Typography>
+                  )}
+                </Box>
+              </MenuItem>
+            ))}
+          </TextField>
+        </Box>
+      </Collapse>
+    </Paper>
+  );
+}
+
+function DriverReassignmentDialog({ open, impact, onSkip, onForward }) {
+  if (!impact) return null;
+  const { impactedTask } = impact;
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onSkip}
+      fullWidth
+      maxWidth="xs"
+      aria-labelledby="driver-reassignment-dialog-title"
+    >
+      <DialogTitle id="driver-reassignment-dialog-title" className="reassignment-dialog-title">
+        <Stack direction="row" spacing={1} alignItems="center">
+          <WarningRounded />
+          <Box>
+            <Typography variant="subtitle1">司機下一任務的銜接時間不足</Typography>
+            <Typography variant="caption">請確認受影響的任務是否需變更指派</Typography>
+          </Box>
+        </Stack>
+      </DialogTitle>
+      <DialogContent className="reassignment-dialog-content">
+        <Paper variant="outlined" className="reassignment-task-card">
+          <Typography variant="caption" fontWeight={750} color="primary">{impactedTask.id}</Typography>
+          <Typography className="reassignment-task-station" variant="body2">{impactedTask.station}</Typography>
+          <Stack className="task-summary-meta" spacing={0.7}>
+            <Stack direction="row" spacing={0.7} alignItems="center">
+              <LocationOnOutlined className="task-mini-icon" />
+              <Typography variant="caption">{impactedTask.address}</Typography>
+            </Stack>
+            <Stack direction="row" spacing={0.7} alignItems="center">
+              <AccessTimeRounded className="task-mini-icon" />
+              <Typography variant="caption">
+                {formatHour(impactedTask.start)}–{formatHour(impactedTask.end)}｜{Math.round((impactedTask.end - impactedTask.start) * 60)} 分
+              </Typography>
+            </Stack>
+          </Stack>
+        </Paper>
+      </DialogContent>
+      <DialogActions className="reassignment-dialog-actions">
+        <Button color="inherit" onClick={onSkip}>稍後處理</Button>
+        <Button variant="contained" onClick={onForward}>前往指派</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+function CandidateCard({ candidate, task, active, previewing, impactResolved, onSelect, onHover, onResolveImpact }) {
+  const hasBlockingImpact = candidate.hasDownstreamConflict && !impactResolved;
+  const nextDriverTrip = candidate.nextDriverTask?.id.split('-').at(-1);
   return (
     <Paper
       variant="outlined"
@@ -1380,57 +1948,70 @@ function CandidateCard({ candidate, vehicle, task, active, previewing, onSelect,
     >
       <Stack className="candidate-card-header" direction="row" alignItems="flex-start">
         <Box className="candidate-primary-info">
-          <Typography className="candidate-vehicle-id" variant="body2">{candidate.vehicleId}</Typography>
-          <Stack className="candidate-driver-row" direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
-            <Typography className="candidate-driver-name" variant="body2" color="text.secondary">{displayedDriver.name}</Typography>
-            <Box className="candidate-work-hours">
-              <Typography variant="body2">預估工時 {displayedDriver.workHours}</Typography>
-            </Box>
-          </Stack>
+          <Typography className="candidate-pair-id" variant="body2">{candidate.vehicleId}</Typography>
         </Box>
         {previewing && !active && <Typography className="candidate-preview-status" variant="caption">預覽</Typography>}
         {active && <Typography className="candidate-preview-status" variant="caption">預覽中</Typography>}
       </Stack>
-      <Box className="candidate-insertion">
-        {previousTask && (
-          <Box className="insertion-stop">
-            <span className="insertion-marker" />
-            <Box>
-              <Typography variant="caption" className="stop-label">便次 {tripNumber(previousTask)}</Typography>
-              <Typography variant="body2" className="insertion-station-name">{previousTask.station}</Typography>
-              <Typography variant="caption" className="stop-address">{previousTask.address}</Typography>
-              <Typography variant="caption" className="stop-time">預計完成時間 {formatHour(previousTask.end)}</Typography>
-            </Box>
-          </Box>
-        )}
-        <Box className="insertion-stop inserted">
-          <span className="insertion-marker" />
-          <Box>
-            <Typography variant="caption" className="stop-label">插單</Typography>
-            <Typography variant="body2" className="insertion-station-name">{task.customer}</Typography>
-            <Typography variant="caption" className="stop-address">{task.address}</Typography>
-            <Typography variant="caption" className="stop-time">指定時間 {task.window}</Typography>
-          </Box>
-        </Box>
-        {nextTask && (
-          <Box className="insertion-stop">
-            <span className="insertion-marker" />
-            <Box>
-              <Typography variant="caption" className="stop-label">便次 {tripNumber(nextTask)}</Typography>
-              <Typography variant="body2" className="insertion-station-name">{nextTask.station}</Typography>
-              <Typography variant="caption" className="stop-address">{nextTask.address}</Typography>
-              <Typography variant="caption" className="stop-time">
-                預計開始時間 {formatHour(nextTask.start)}
-              </Typography>
-            </Box>
-          </Box>
-        )}
+      <Box className="vehicle-candidate-summary">
+        <Stack direction="row" spacing={0.75} alignItems="center">
+          <LocalShippingRounded />
+          <Typography variant="caption">指定時段可用，不調整原牛奶便車輛</Typography>
+        </Stack>
       </Box>
+      {active && (
+        <Box className="resource-pair-preview" onClick={(event) => event.stopPropagation()}>
+          <Typography className="resource-preview-title" variant="caption">司機行程</Typography>
+          <ResourceFlow label="司機" resourceName={candidate.driverName} previousTask={candidate.previousDriverTask} task={{ ...task, start: candidate.start }} nextTask={candidate.nextDriverTask} />
+          {hasBlockingImpact && (
+          <Box className="downstream-impact-check blocking">
+            <WarningRounded />
+            <Box>
+              <Typography variant="caption" fontWeight={750}>後續任務影響</Typography>
+              <Typography variant="caption">
+                {`安排後，${candidate.driverName} ${formatHour(candidate.nextDriverTask.start)} 的便次 ${nextDriverTrip} 將無人執行。`}
+              </Typography>
+              <Button className="impact-replacement-action" size="small" variant="outlined" onClick={() => onResolveImpact(candidate)}>安排接替司機</Button>
+            </Box>
+          </Box>
+          )}
+        </Box>
+      )}
     </Paper>
   );
 }
 
-function TaskPanel({ selectedTask, onDragStart, candidates, vehicles, activeCandidate, hoveredCandidate, onSelectCandidate, onHoverCandidate, onConfirm, onClearSelection, onClosePanel, onViewLocation, embedded = false }) {
+function TaskPanel({ selectedTask, onDragStart, candidates, selectedDriverName, activeCandidate, hoveredCandidate, resolvedCandidatePairs, onSelectDriver, onSelectCandidate, onHoverCandidate, onResolveImpact, onConfirm, confirming = false, onClearSelection, onClosePanel, onViewLocation, onFocusTimeline, embedded = false }) {
+  const [manualPickerOpen, setManualPickerOpen] = useState(false);
+  const driverCandidates = candidates.filter((candidate, index, items) => (
+    items.findIndex((item) => item.driverName === candidate.driverName) === index
+  ));
+
+  const selectDriverOption = (driverName) => {
+    setManualPickerOpen(false);
+    onSelectDriver(driverName);
+  };
+
+  const toggleManualOption = () => {
+    const next = !manualPickerOpen;
+    setManualPickerOpen(next);
+    if (next) onSelectDriver(null);
+  };
+
+  useEffect(() => {
+    setManualPickerOpen(false);
+  }, [selectedTask.id]);
+
+  useEffect(() => {
+    if (!selectedDriverName || manualPickerOpen) return;
+    window.setTimeout(() => {
+      document.querySelector('.order-queue-task-panel .driver-candidate-card.active')?.scrollIntoView({
+        block: 'nearest',
+        behavior: 'smooth',
+      });
+    }, 80);
+  }, [selectedDriverName, manualPickerOpen]);
+
   return (
     <Paper variant="outlined" className={`task-panel ${embedded ? 'order-queue-task-panel' : ''}`}>
       <Box className="panel-heading">
@@ -1438,26 +2019,51 @@ function TaskPanel({ selectedTask, onDragStart, candidates, vehicles, activeCand
           {embedded && (
             <IconButton size="small" aria-label="返回待插單列表" onClick={onClearSelection}><ChevronLeftRounded /></IconButton>
           )}
-          <Typography variant="subtitle1">安排插單車輛</Typography>
+          <Typography variant="subtitle1">指派司機與車輛</Typography>
         </Stack>
         <IconButton size="small" aria-label="關閉插單安排" onClick={embedded ? onClosePanel : onClearSelection}><CloseRounded /></IconButton>
       </Box>
       <Box className="task-panel-scroll">
         <Box
-          className="assessment-order-summary"
+          className={`assessment-order-summary ${selectedTask.assignmentMode === 'reassign-driver' ? 'reassignment' : ''}`}
           draggable={Boolean(onDragStart)}
           onDragStart={onDragStart ? (event) => onDragStart(event, selectedTask) : undefined}
         >
           <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
             <Box>
               <Typography variant="caption" fontWeight={750} color="primary">{selectedTask.id}</Typography>
-              <Typography className="assessment-order-station" variant="body2" mt={0.35}>{selectedTask.customer}</Typography>
+              <Typography className="assessment-order-station" variant="body2" mt={0.35}>{selectedTask.station ?? selectedTask.customer}</Typography>
             </Box>
-            <Tooltip title="查看定位">
-              <IconButton className="assessment-location-button" size="small" aria-label="查看定位" onClick={onViewLocation}>
-                <PinDropOutlined />
-              </IconButton>
-            </Tooltip>
+            <Stack className="assessment-order-actions" direction="row" spacing={0.25}>
+              {selectedTask.assignmentMode === 'reassign-driver' && (
+                <Tooltip title="查看時間軸">
+                  <IconButton
+                    className="assessment-timeline-focus-button"
+                    size="small"
+                    aria-label="查看時間軸"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onFocusTimeline(selectedTask);
+                    }}
+                  >
+                    <ViewTimelineOutlined />
+                  </IconButton>
+                </Tooltip>
+              )}
+              <Tooltip title="地圖定位">
+                <IconButton
+                  className="assessment-location-button"
+                  size="small"
+                  aria-label="地圖定位"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onViewLocation(selectedTask);
+                  }}
+                >
+                  <PinDropOutlined />
+                </IconButton>
+              </Tooltip>
+            </Stack>
           </Stack>
           <Stack className="task-summary-meta" spacing={0.7}>
             <Stack direction="row" spacing={0.7} alignItems="center"><LocationOnOutlined className="task-mini-icon" /><Typography variant="caption">{selectedTask.address ?? selectedTask.pickup}</Typography></Stack>
@@ -1465,37 +2071,154 @@ function TaskPanel({ selectedTask, onDragStart, candidates, vehicles, activeCand
           </Stack>
         </Box>
         <Box className="candidate-section">
-          <Typography className="candidate-section-title" variant="subtitle2" fontWeight={750}>候選車輛 ({candidates.length})</Typography>
-          {candidates.length ? (
+          <Typography className="candidate-section-title" variant="subtitle2" fontWeight={750}>插入空檔</Typography>
+          {driverCandidates.length > 0 && (
             <Stack spacing={1}>
-              {candidates.map((candidate) => (
-                <CandidateCard
-                  key={candidate.vehicleId}
+              {driverCandidates.map((candidate) => (
+                <DriverCandidateCard
+                  key={candidate.driverName}
                   candidate={candidate}
-                  vehicle={vehicles.find((item) => item.id === candidate.vehicleId)}
-                  task={selectedTask}
-                  active={activeCandidate?.vehicleId === candidate.vehicleId}
-                  previewing={hoveredCandidate?.vehicleId === candidate.vehicleId}
-                  onSelect={onSelectCandidate}
-                  onHover={onHoverCandidate}
+                  vehicleCandidates={candidates.filter((item) => item.driverName === candidate.driverName)}
+                  selected={!manualPickerOpen && selectedDriverName === candidate.driverName}
+                  activeCandidate={activeCandidate}
+                  onSelectDriver={selectDriverOption}
+                  onSelectVehicle={onSelectCandidate}
                 />
               ))}
             </Stack>
-          ) : (
-            <Box className="no-candidate-detail">
-              <WarningRounded />
-              <Box>
-                <Typography variant="subtitle2" fontWeight={750}>目前沒有可安排車輛</Typography>
-                <Typography variant="caption" color="text.secondary">主要排除原因為時間窗衝突，其次為載重與工時不足。可返回修改時間窗或貨物條件後重新檢查。</Typography>
-              </Box>
-            </Box>
           )}
+          {driverCandidates.length === 0 && (
+            <Typography className="candidate-empty-hint" variant="body2">
+              目前值班的司機尚無對應空檔
+            </Typography>
+          )}
+          <Paper
+            variant="outlined"
+            className={`manual-resource-option-card ${manualPickerOpen ? 'expanded' : ''}`}
+          >
+            <Box
+              component="button"
+              type="button"
+              className="manual-resource-option-trigger"
+              aria-expanded={manualPickerOpen}
+              onClick={toggleManualOption}
+            >
+              <AddRounded />
+              <Typography variant="body2">指定司機與車輛</Typography>
+            </Box>
+            <Collapse in={manualPickerOpen} unmountOnExit>
+              <ManualResourcePicker
+                task={selectedTask}
+                onDriverChange={onSelectDriver}
+                onSelect={onSelectCandidate}
+              />
+            </Collapse>
+          </Paper>
         </Box>
       </Box>
       <Box className="task-panel-actions">
-        <Button fullWidth variant="contained" disabled={!activeCandidate} onClick={onConfirm}>確認插入</Button>
+        <Button fullWidth variant="contained" disabled={!activeCandidate || confirming} onClick={onConfirm}>
+          {confirming ? (
+            <Stack direction="row" spacing={0.75} alignItems="center">
+              <CircularProgress size={15} color="inherit" />
+              <span>指派中…</span>
+            </Stack>
+          ) : '確認指派'}
+        </Button>
       </Box>
     </Paper>
+  );
+}
+
+function ManualResourcePicker({ task, onSelect, onDriverChange }) {
+  const [vehicleId, setVehicleId] = useState('');
+  const [driverName, setDriverName] = useState('');
+
+  useEffect(() => {
+    setVehicleId('');
+    setDriverName('');
+  }, [task.id]);
+
+  const driverCandidates = initialVehicles
+    .flatMap(getVehicleDriverOptions)
+    .filter((driver) => driver.name && driver.name !== '待指派')
+    .filter((driver, index, items) => items.findIndex((item) => item.name === driver.name) === index);
+  const vehicleCandidates = initialVehicles.filter((vehicle) => vehicle.serviceType === 'other-business');
+  const selectedDriver = driverCandidates.find((driver) => driver.name === driverName);
+  const chooseDriver = (event) => {
+    const nextDriverName = event.target.value;
+    setDriverName(nextDriverName);
+    setVehicleId('');
+    onDriverChange?.(nextDriverName);
+  };
+
+  const chooseVehicle = (event) => {
+    const nextVehicleId = event.target.value;
+    setVehicleId(nextVehicleId);
+    if (!task || !selectedDriver) return;
+    onSelect(buildCandidatePair(
+      { ...getTaskWindowRange(task), taskId: task.id, vehicleId: nextVehicleId },
+      selectedDriver,
+    ));
+  };
+
+  return (
+    <Box className="inline-manual-resource-picker">
+      <Box className="inline-manual-resource-fields">
+        <TextField
+          select
+          fullWidth
+          size="small"
+          label="司機"
+          value={driverName}
+          onChange={chooseDriver}
+          slotProps={{
+            select: {
+              renderValue: (value) => value,
+              MenuProps: {
+                slotProps: {
+                  paper: {
+                    className: 'resource-select-menu-paper',
+                    sx: { maxHeight: RESOURCE_MENU_MAX_HEIGHT, overflowY: 'auto' },
+                  },
+                  list: { sx: { py: 0.5 } },
+                },
+              },
+            },
+          }}
+        >
+          {driverCandidates.map((driver) => (
+            <MenuItem className="resource-select-menu-item" key={driver.name} value={driver.name}>
+              {`${driver.name}（預估工時 ${driver.workHours}）`}
+            </MenuItem>
+          ))}
+        </TextField>
+        <TextField
+          select
+          fullWidth
+          size="small"
+          label="車輛"
+          value={vehicleId}
+          onChange={chooseVehicle}
+          disabled={!driverName}
+          slotProps={{
+            select: {
+              MenuProps: {
+                slotProps: {
+                  paper: {
+                    className: 'resource-select-menu-paper',
+                    sx: { maxHeight: RESOURCE_MENU_MAX_HEIGHT, overflowY: 'auto' },
+                  },
+                  list: { sx: { py: 0.5 } },
+                },
+              },
+            },
+          }}
+        >
+          {vehicleCandidates.map((vehicle) => <MenuItem className="resource-select-menu-item" key={vehicle.id} value={vehicle.id}>{vehicle.id}</MenuItem>)}
+        </TextField>
+      </Box>
+    </Box>
   );
 }
 
@@ -1509,6 +2232,7 @@ function KeyInDialog({ open, onClose, onCreate }) {
     onCreate({
       id: 'OTH-0246',
       customer: form.customer,
+      station: form.deliveryName,
       address: form.pickupAddress,
       route: `${form.pickupName} → ${form.deliveryName}`,
       pickup: form.pickupAddress,
@@ -1630,14 +2354,22 @@ function PreviewDialog({ open, task, candidate, vehicle, onClose, onConfirm }) {
 }
 
 export default function App() {
+  const [activePage, setActivePage] = useState('monitoring');
   const [otherTasks, setOtherTasks] = useState(initialOtherTasks);
   const [selectedTask, setSelectedTask] = useState(null);
   const [draggedTask, setDraggedTask] = useState(null);
+  const [selectedDriverName, setSelectedDriverName] = useState(null);
   const [activeCandidate, setActiveCandidate] = useState(null);
   const [hoveredCandidate, setHoveredCandidate] = useState(null);
+  const [resolvedCandidatePairs, setResolvedCandidatePairs] = useState(() => new Set());
   const [orderQueueOpen, setOrderQueueOpen] = useState(false);
+  const [orderQueueWidth, setOrderQueueWidth] = useState(320);
   const [keyInOpen, setKeyInOpen] = useState(false);
   const [insertedTasks, setInsertedTasks] = useState([]);
+  const [taskDriverOverrides, setTaskDriverOverrides] = useState({});
+  const [pendingDriverReassignment, setPendingDriverReassignment] = useState(null);
+  const [reassignmentDialogOpen, setReassignmentDialogOpen] = useState(false);
+  const [assignmentLoading, setAssignmentLoading] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const [mapExpanded, setMapExpanded] = useState(false);
   const [mapHeight, setMapHeight] = useState(300);
@@ -1646,8 +2378,19 @@ export default function App() {
   const [stationMapFocus, setStationMapFocus] = useState(null);
   const [mapFocusRequest, setMapFocusRequest] = useState(null);
   const [sidebarExpanded, setSidebarExpanded] = useState(() => window.matchMedia('(min-width: 1180px)').matches);
-  const [compareDispatchPlan, setCompareDispatchPlan] = useState(true);
+  const [showActualExecution, setShowActualExecution] = useState(true);
+  const [timelineScaleMinutes, setTimelineScaleMinutes] = useState(10);
   const [maximizedView, setMaximizedView] = useState(null);
+
+  const navigateToPage = (page) => {
+    setActivePage(page);
+    setMaximizedView(null);
+    if (page !== 'monitoring') {
+      setOrderQueueOpen(false);
+      setSelectedTask(null);
+      setMapExpanded(false);
+    }
+  };
 
   useEffect(() => {
     const compactViewport = window.matchMedia('(max-width: 1179px)');
@@ -1657,14 +2400,133 @@ export default function App() {
     return () => compactViewport.removeEventListener('change', syncSidebarToViewport);
   }, []);
 
+  useEffect(() => {
+    const keepPanelWithinViewport = () => {
+      const maximumWidth = Math.floor(window.innerWidth * 0.35);
+      const minimumWidth = Math.min(320, maximumWidth);
+      setOrderQueueWidth((current) => Math.min(maximumWidth, Math.max(minimumWidth, current)));
+    };
+    window.addEventListener('resize', keepPanelWithinViewport);
+    keepPanelWithinViewport();
+    return () => window.removeEventListener('resize', keepPanelWithinViewport);
+  }, []);
+
+  const clampOrderQueueWidth = (width) => {
+    const maximumWidth = Math.floor(window.innerWidth * 0.35);
+    const minimumWidth = Math.min(320, maximumWidth);
+    return Math.min(maximumWidth, Math.max(minimumWidth, width));
+  };
+
+  const startOrderQueueResize = (event) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = orderQueueWidth;
+    document.body.classList.add('order-queue-resizing');
+
+    const resizePanel = (moveEvent) => {
+      setOrderQueueWidth(clampOrderQueueWidth(startWidth + startX - moveEvent.clientX));
+    };
+    const finishResize = () => {
+      document.body.classList.remove('order-queue-resizing');
+      document.removeEventListener('pointermove', resizePanel);
+      document.removeEventListener('pointerup', finishResize);
+      document.removeEventListener('pointercancel', finishResize);
+    };
+
+    document.addEventListener('pointermove', resizePanel);
+    document.addEventListener('pointerup', finishResize);
+    document.addEventListener('pointercancel', finishResize);
+  };
+
+  const resizeOrderQueueWithKeyboard = (event) => {
+    const steps = { ArrowLeft: 24, ArrowRight: -24 };
+    if (event.key in steps) {
+      event.preventDefault();
+      setOrderQueueWidth((current) => clampOrderQueueWidth(current + steps[event.key]));
+      return;
+    }
+    if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      const maximumWidth = Math.floor(window.innerWidth * 0.35);
+      setOrderQueueWidth(event.key === 'Home' ? Math.min(320, maximumWidth) : maximumWidth);
+    }
+  };
+
   const assessmentTask = selectedTask ?? draggedTask;
-  const candidates = useMemo(() => (
-    assessmentTask
-      ? (candidatesByTask[assessmentTask.id] || [])
-        .map((candidate) => alignCandidateToTaskWindow(candidate, assessmentTask))
-        .filter(candidateFitsVehicleSchedule)
-      : []
-  ), [assessmentTask]);
+  const candidates = useMemo(() => {
+    if (!assessmentTask) return [];
+    if (assessmentTask.assignmentMode === 'reassign-driver') {
+      const taskWindow = getTaskWindowRange(assessmentTask);
+      const drivers = initialVehicles
+        .flatMap(getVehicleDriverOptions)
+        .filter((driver) => driver.name && driver.name !== '待指派' && driver.name !== assessmentTask.originalDriverName)
+        .filter((driver, index, items) => items.findIndex((item) => item.name === driver.name) === index);
+
+      return drivers
+        .map((driver) => buildCandidatePair({
+          ...taskWindow,
+          taskId: assessmentTask.id,
+          vehicleId: assessmentTask.fixedVehicleId,
+        }, driver))
+        .filter((candidate) => candidate?.driverAssignments.every((task) => (
+          task.end <= candidate.start || task.start >= candidate.end
+        )))
+        .filter((candidate) => candidate.previousDriverTask && candidate.nextDriverTask)
+        .slice(0, OTHER_BUSINESS_VEHICLE_OPTION_LIMIT);
+    }
+    const driverSeedCandidates = (candidatesByTask[assessmentTask.id] || [])
+      .map((candidate) => alignCandidateToTaskWindow(candidate, assessmentTask));
+    const eligibleDrivers = getEligibleDriversForCandidates(driverSeedCandidates);
+    const taskWindow = getTaskWindowRange(assessmentTask);
+    const vehiclePool = initialVehicles.filter((vehicle) => vehicle.serviceType === 'other-business');
+
+    return eligibleDrivers.flatMap((driver) => vehiclePool
+      .map((vehicle) => buildCandidatePair({
+        ...taskWindow,
+        taskId: assessmentTask.id,
+        vehicleId: vehicle.id,
+        distanceToPickupKm: assessmentTask.pickupPosition
+          ? calculateDistanceKm(vehicle.position, assessmentTask.pickupPosition)
+          : null,
+      }, driver))
+      .filter(candidatePairIsAvailable)
+      .filter((candidate) => candidate.previousDriverTask || candidate.nextDriverTask)
+      .sort((candidateA, candidateB) => (
+        (candidateA.distanceToPickupKm ?? Number.POSITIVE_INFINITY)
+        - (candidateB.distanceToPickupKm ?? Number.POSITIVE_INFINITY)
+      ))
+      .slice(0, OTHER_BUSINESS_VEHICLE_OPTION_LIMIT));
+  }, [assessmentTask]);
+  const driverTimelineCandidates = useMemo(() => {
+    if (!assessmentTask) return [];
+    const candidatesByDriver = new Map();
+    candidates.forEach((candidate) => {
+      if (!candidatesByDriver.has(candidate.driverName)) {
+        candidatesByDriver.set(candidate.driverName, candidate);
+      }
+    });
+
+    return [...candidatesByDriver.values()].map((candidate) => {
+      const currentDriverVehicle = initialVehicles.find((vehicle) => vehicle.driver === candidate.driverName)
+        ?? initialVehicles.find((vehicle) => (
+          getVehicleDriverOptions(vehicle).some((driver) => driver.name === candidate.driverName)
+        ));
+      return currentDriverVehicle
+        ? { ...candidate, vehicleId: currentDriverVehicle.id }
+        : candidate;
+    });
+  }, [assessmentTask, candidates]);
+
+  const timelineCandidates = useMemo(() => {
+    const visibleCandidates = driverTimelineCandidates.filter((candidate) => (
+      !activeCandidate
+      || (candidate.driverName !== activeCandidate.driverName && candidate.vehicleId !== activeCandidate.vehicleId)
+    ));
+    if (activeCandidate) {
+      visibleCandidates.push(activeCandidate);
+    }
+    return visibleCandidates;
+  }, [driverTimelineCandidates, activeCandidate]);
   const candidateFocus = hoveredCandidate || activeCandidate;
   const candidateFocusVehicle = candidateFocus
     ? initialVehicles.find((vehicle) => vehicle.id === candidateFocus.vehicleId)
@@ -1673,21 +2535,41 @@ export default function App() {
     ? initialVehicles.find((vehicle) => vehicle.id === stationMapFocus.vehicleId)
     : candidateFocusVehicle;
   const comparisonTarget = stationMapFocus ?? (assessmentTask?.pickupPosition
-    ? { position: assessmentTask.pickupPosition, label: `插單站點｜${assessmentTask.customer}` }
+    ? { position: assessmentTask.pickupPosition, label: `插單站點｜${assessmentTask.station ?? assessmentTask.customer}` }
     : null);
   const comparisonDistanceKm = comparisonVehicle && comparisonTarget?.position
     ? calculateDistanceKm(comparisonVehicle.position, comparisonTarget.position)
     : null;
   const filteredVehicles = useMemo(() => {
-    if (overviewFilter === 'abnormal') {
-      return initialVehicles.filter(vehicleHasAbnormal);
+    let matchedVehicles = initialVehicles;
+    if (overviewFilter === 'running') {
+      matchedVehicles = initialVehicles.filter(vehicleIsRunning);
+    } else if (overviewFilter === 'abnormal') {
+      matchedVehicles = initialVehicles.filter(vehicleHasAbnormal);
     }
-    return initialVehicles;
+
+    return matchedVehicles
+      .map((vehicle, originalIndex) => ({ vehicle, originalIndex }))
+      .sort((itemA, itemB) => (
+        getVehicleOverviewOrder(itemA.vehicle) - getVehicleOverviewOrder(itemB.vehicle)
+        || itemA.originalIndex - itemB.originalIndex
+      ))
+      .map(({ vehicle }) => vehicle);
   }, [overviewFilter]);
+  const timelineVehicles = useMemo(() => filteredVehicles.map((vehicle) => ({
+    ...vehicle,
+    tasks: vehicle.tasks.map((task) => (
+      taskDriverOverrides[task.id]
+        ? { ...task, assignedDriver: taskDriverOverrides[task.id] }
+        : task
+    )),
+  })), [filteredVehicles, taskDriverOverrides]);
 
   const selectTask = (task) => {
+    setOverviewFilter('all');
     setDraggedTask(null);
     setSelectedTask(task);
+    setSelectedDriverName(null);
     setActiveCandidate(null);
     setHoveredCandidate(null);
     setStationMapFocus(null);
@@ -1696,6 +2578,7 @@ export default function App() {
   const clearTaskAssessment = () => {
     setDraggedTask(null);
     setSelectedTask(null);
+    setSelectedDriverName(null);
     setActiveCandidate(null);
     setHoveredCandidate(null);
     setStationMapFocus(null);
@@ -1709,6 +2592,7 @@ export default function App() {
   const startDrag = (event, task) => {
     setOverviewFilter('all');
     setDraggedTask(task);
+    setSelectedDriverName(null);
     setActiveCandidate(null);
     setHoveredCandidate(null);
     setStationMapFocus(null);
@@ -1732,21 +2616,106 @@ export default function App() {
   };
 
   const confirmInsertion = () => {
-    if (!selectedTask || !activeCandidate) return;
-    const assignedVehicle = initialVehicles.find((vehicle) => vehicle.id === activeCandidate.vehicleId);
-    const assignedDriver = getVehicleDriverOptions(assignedVehicle)[0].name;
-    setInsertedTasks((items) => [...items, {
-      task: selectedTask,
-      candidate: activeCandidate,
-      vehicleId: activeCandidate.vehicleId,
-      assignedDriver,
-    }]);
-    const remaining = otherTasks.filter((task) => task.id !== selectedTask.id);
-    setOtherTasks(remaining);
-    setSelectedTask(null);
+    if (!selectedTask || !activeCandidate || assignmentLoading) return;
+    const insertedTask = selectedTask;
+    const insertionCandidate = activeCandidate;
+    if (insertedTask.assignmentMode === 'reassign-driver') {
+      setAssignmentLoading(true);
+      window.setTimeout(() => {
+        setTaskDriverOverrides((current) => ({
+          ...current,
+          [insertedTask.id]: insertionCandidate.driverName,
+        }));
+        setResolvedCandidatePairs((current) => new Set([
+          ...current,
+          insertionCandidate.pairId ?? getCandidatePairId(insertionCandidate),
+        ]));
+        setPendingDriverReassignment(null);
+        setSelectedTask(null);
+        setSelectedDriverName(null);
+        setActiveCandidate(null);
+        setHoveredCandidate(null);
+        setAssignmentLoading(false);
+        setSnackbarMessage('已指派，排程已更新');
+      }, ASSIGNMENT_LOADING_DURATION_MS);
+      return;
+    }
+    const hasPendingReassignment = Boolean(
+      insertionCandidate.hasDownstreamConflict && insertionCandidate.nextDriverTask,
+    );
+    setAssignmentLoading(true);
+
+    window.setTimeout(() => {
+      setInsertedTasks((items) => [...items, {
+        task: insertedTask,
+        candidate: insertionCandidate,
+        vehicleId: insertionCandidate.vehicleId,
+        assignedDriver: insertionCandidate.driverName,
+      }]);
+      setOtherTasks((tasks) => tasks.filter((task) => task.id !== insertedTask.id));
+      setSelectedTask(null);
+      setSelectedDriverName(null);
+      setActiveCandidate(null);
+      setHoveredCandidate(null);
+      setAssignmentLoading(false);
+      setSnackbarMessage('已指派，排程已更新');
+
+      if (hasPendingReassignment) {
+        const nextImpact = {
+          candidate: insertionCandidate,
+          impactedTask: insertionCandidate.nextDriverTask,
+        };
+        setPendingDriverReassignment(nextImpact);
+        window.setTimeout(() => {
+          setReassignmentDialogOpen(true);
+        }, POST_ASSIGNMENT_DIALOG_DELAY_MS);
+      }
+    }, ASSIGNMENT_LOADING_DURATION_MS);
+  };
+
+  const skipDriverReassignment = () => {
+    setReassignmentDialogOpen(false);
+    setPendingDriverReassignment(null);
+    setSnackbarMessage('');
+  };
+
+  const openTaskAssignmentPanel = (task, vehicleId, originalDriverName) => {
+    if (!task || !vehicleId) return;
+    setReassignmentDialogOpen(false);
+    setSnackbarMessage('');
+    setOrderQueueOpen(true);
+    setSelectedTask({
+      ...task,
+      customer: task.station,
+      window: `${formatHour(task.start)}–${formatHour(task.end)}`,
+      duration: `${Math.round((task.end - task.start) * 60)} 分`,
+      assignmentMode: 'reassign-driver',
+      fixedVehicleId: vehicleId,
+      originalDriverName,
+    });
+    setSelectedDriverName(null);
     setActiveCandidate(null);
     setHoveredCandidate(null);
-    setSnackbarMessage('已確認安排，時間軸已更新');
+    setStationMapFocus(null);
+  };
+
+  const openDriverReassignmentPanel = () => {
+    if (!pendingDriverReassignment?.impactedTask) return;
+    const { candidate, impactedTask } = pendingDriverReassignment;
+    openTaskAssignmentPanel(impactedTask, impactedTask.vehicleId, candidate.driverName);
+  };
+
+  const openTimelineTaskAssignmentPanel = (vehicle, task) => {
+    openTaskAssignmentPanel(task, vehicle.id, task.assignedDriver ?? vehicle.driver);
+  };
+
+  const resolveCandidateImpact = (candidate) => {
+    setResolvedCandidatePairs((current) => new Set([
+      ...current,
+      candidate.pairId ?? getCandidatePairId(candidate),
+      getDriverImpactId(candidate),
+    ]));
+    setSnackbarMessage('已安排接替司機，後續任務衝突已解除');
   };
 
   const createKeyedTask = (task) => {
@@ -1756,29 +2725,15 @@ export default function App() {
     setSnackbarMessage('訂單已建立並加入待安排清單');
   };
 
-  const selectCandidatePreview = (candidate, taskOverride = null) => {
-    const taskContext = taskOverride ?? selectedTask;
-    setOverviewFilter('all');
-    setActiveCandidate(candidate);
-    setHoveredCandidate(null);
-    setStationMapFocus(null);
-    setFocusedVehicleId(candidate.vehicleId);
-    setMapExpanded(true);
-    const vehicle = initialVehicles.find((item) => item.id === candidate.vehicleId);
-    setMapFocusRequest({
-      vehicleId: candidate.vehicleId,
-      positions: vehicle && taskContext?.pickupPosition ? [vehicle.position, taskContext.pickupPosition] : undefined,
-      requestId: Date.now(),
-    });
-
+  const scrollCandidateIntoView = (candidate) => {
+    if (!candidate) return;
     window.setTimeout(() => {
       const slot = document.getElementById(`candidate-slot-${candidate.vehicleId}`);
-      const row = slot?.closest('.timeline-row');
-      const timeline = slot?.closest('.timeline-shell');
-      if (!slot || !row || !timeline) return;
+      const row = document.getElementById(`timeline-vehicle-${candidate.vehicleId}`);
+      const timeline = row?.closest('.timeline-shell');
+      if (!row || !timeline) return;
 
       const timelineRect = timeline.getBoundingClientRect();
-      const slotRect = slot.getBoundingClientRect();
       const rowRect = row.getBoundingClientRect();
       const stickyColumnWidth = 176;
       const stickyHeaderHeight = 36;
@@ -1786,13 +2741,83 @@ export default function App() {
       const trackViewportCenter = timelineRect.left + stickyColumnWidth + trackViewportWidth / 2;
       const bodyViewportHeight = Math.max(1, timeline.clientHeight - stickyHeaderHeight);
       const bodyViewportCenter = timelineRect.top + stickyHeaderHeight + bodyViewportHeight / 2;
+      const nextLeft = slot
+        ? Math.max(0, timeline.scrollLeft + (slot.getBoundingClientRect().left + slot.getBoundingClientRect().width / 2 - trackViewportCenter))
+        : timeline.scrollLeft;
 
       timeline.scrollTo({
-        left: Math.max(0, timeline.scrollLeft + (slotRect.left + slotRect.width / 2 - trackViewportCenter)),
+        left: nextLeft,
         top: Math.max(0, timeline.scrollTop + (rowRect.top + rowRect.height / 2 - bodyViewportCenter)),
         behavior: 'smooth',
       });
     }, 80);
+  };
+
+  const focusTaskInTimeline = (task) => {
+    const vehicleId = task.fixedVehicleId ?? task.vehicleId;
+    if (!vehicleId) return;
+    setOverviewFilter('all');
+    setFocusedVehicleId(vehicleId);
+    setStationMapFocus(null);
+
+    window.setTimeout(() => {
+      const row = document.getElementById(`timeline-vehicle-${vehicleId}`);
+      const timeline = row?.closest('.timeline-shell');
+      const track = row?.querySelector('.timeline-track');
+      if (!row || !timeline || !track) return;
+      const taskCenterHour = ((task.start ?? NOW_HOUR) + (task.end ?? task.start ?? NOW_HOUR)) / 2;
+      const taskCenterRatio = Math.max(0, Math.min(1, (taskCenterHour - START_HOUR) / HOUR_COUNT));
+      const stickyColumnWidth = 176;
+      const trackViewportWidth = Math.max(1, timeline.clientWidth - stickyColumnWidth);
+      const targetLeft = track.offsetLeft + (track.clientWidth * taskCenterRatio);
+      const bodyViewportHeight = Math.max(1, timeline.clientHeight - 36);
+
+      timeline.scrollTo({
+        left: Math.max(0, targetLeft - stickyColumnWidth - (trackViewportWidth / 2)),
+        top: Math.max(0, row.offsetTop - 36 - ((bodyViewportHeight - row.offsetHeight) / 2)),
+        behavior: 'smooth',
+      });
+    }, 80);
+  };
+
+  const selectCandidatePreview = (candidate, taskOverride = null) => {
+    const taskContext = taskOverride ?? selectedTask;
+    setOverviewFilter('all');
+    setSelectedDriverName(candidate.driverName);
+    setActiveCandidate(candidate);
+    setHoveredCandidate(null);
+    setStationMapFocus(null);
+    setFocusedVehicleId(candidate.vehicleId);
+    const vehicle = initialVehicles.find((item) => item.id === candidate.vehicleId);
+    setMapFocusRequest({
+      vehicleId: candidate.vehicleId,
+      positions: vehicle && taskContext?.pickupPosition ? [vehicle.position, taskContext.pickupPosition] : undefined,
+      requestId: Date.now(),
+    });
+    scrollCandidateIntoView(candidate);
+  };
+
+  const selectDriverForTask = (driverName) => {
+    setSelectedDriverName(driverName);
+    setActiveCandidate(null);
+    setStationMapFocus(null);
+    if (!driverName) {
+      setHoveredCandidate(null);
+      setFocusedVehicleId(null);
+      return;
+    }
+
+    const focusCandidate = driverTimelineCandidates.find((candidate) => candidate.driverName === driverName);
+    const assignedVehicle = initialVehicles.find((vehicle) => (
+      getVehicleDriverOptions(vehicle).some((driver) => driver.name === driverName)
+    ));
+    const focusVehicleId = focusCandidate?.vehicleId ?? assignedVehicle?.id ?? null;
+    setOverviewFilter('all');
+    setHoveredCandidate(focusCandidate ?? null);
+    setFocusedVehicleId(focusVehicleId);
+    if (focusVehicleId) {
+      scrollCandidateIntoView(focusCandidate ?? { vehicleId: focusVehicleId });
+    }
   };
 
   const dropTaskOnCandidate = (candidate) => {
@@ -1800,7 +2825,7 @@ export default function App() {
     const task = draggedTask;
     setSelectedTask(task);
     setDraggedTask(null);
-    selectCandidatePreview(candidate, task);
+    selectDriverForTask(candidate.driverName);
   };
 
   const focusVehicleFromMap = (vehicle) => {
@@ -1843,18 +2868,35 @@ export default function App() {
     }, 240);
   };
 
-  const viewSelectedTaskLocation = () => {
-    if (!selectedTask?.pickupPosition) return;
+  const viewSelectedTaskLocation = (task = selectedTask) => {
+    if (!task) return;
+    const vehicleId = task.fixedVehicleId ?? task.vehicleId;
+    const vehicle = vehicleId
+      ? initialVehicles.find((item) => item.id === vehicleId)
+      : null;
+    const targetPosition = task.pickupPosition
+      ?? (vehicle ? getStationMapPosition(vehicle, task) : null);
+    if (!targetPosition) return;
+
+    if (maximizedView === 'timeline') setMaximizedView(null);
     setMapExpanded(true);
-    setStationMapFocus(null);
-    setFocusedVehicleId(null);
-    setMapFocusRequest({ position: selectedTask.pickupPosition, requestId: Date.now() });
+    setFocusedVehicleId(vehicle?.id ?? null);
+    setStationMapFocus({
+      vehicleId: vehicle?.id,
+      position: targetPosition,
+      label: `${task.assignmentMode === 'reassign-driver' ? '站點' : '插單站點'}｜${task.station ?? task.customer}`,
+    });
+    setMapFocusRequest({
+      position: targetPosition,
+      positions: vehicle ? [vehicle.position, targetPosition] : undefined,
+      requestId: Date.now(),
+    });
     window.setTimeout(() => {
       const panel = document.querySelector('.context-map-panel');
       if (panel) {
         window.scrollTo({ top: Math.max(0, panel.getBoundingClientRect().top + window.scrollY - 72), behavior: 'smooth' });
       }
-    }, 240);
+    }, 280);
   };
 
   const clampMapHeight = (height) => {
@@ -1925,11 +2967,18 @@ export default function App() {
   }, [maximizedView]);
 
   return (
-    <Box className={`app-shell ${sidebarExpanded ? 'sidebar-expanded' : 'sidebar-collapsed'} ${orderQueueOpen ? 'order-queue-open' : ''} ${maximizedView ? `focus-mode focus-${maximizedView}` : ''}`}>
-      <Sidebar expanded={sidebarExpanded} onToggle={() => setSidebarExpanded((current) => !current)} />
+    <Box
+      className={`app-shell ${sidebarExpanded ? 'sidebar-expanded' : 'sidebar-collapsed'} ${activePage === 'monitoring' && orderQueueOpen ? 'order-queue-open' : ''} ${maximizedView ? `focus-mode focus-${maximizedView}` : ''}`}
+      style={{ '--order-queue-width': activePage === 'monitoring' && orderQueueOpen ? `${orderQueueWidth}px` : '0px' }}
+    >
+      <Sidebar expanded={sidebarExpanded} onToggle={() => setSidebarExpanded((current) => !current)} activePage={activePage} onNavigate={navigateToPage} />
       <Box className="app-main">
         <TopHeader sidebarExpanded={sidebarExpanded} onToggleSidebar={() => setSidebarExpanded((current) => !current)} />
-        <main className="content">
+        <main className={`content ${activePage === 'checklist' ? 'checklist-content' : ''}`}>
+          {activePage === 'checklist' ? (
+            <ChecklistManagementPage />
+          ) : (
+          <>
           <Box className="page-heading-row" sx={{ width: '100%', mb: '16px' }}>
             <Stack direction="row" alignItems="center" sx={{ width: '100%' }}>
               <Typography variant="h5">營運監控</Typography>
@@ -1985,7 +3034,7 @@ export default function App() {
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                   />
                 <ZoomControl position="bottomright" />
-                <MapResizeHandler dependency={`${sidebarExpanded}-${orderQueueOpen}-${mapHeight}-${maximizedView}`} />
+                <MapResizeHandler dependency={`${sidebarExpanded}-${orderQueueOpen}-${orderQueueWidth}-${mapHeight}-${maximizedView}`} />
                 <MapFocusHandler request={mapFocusRequest} vehicles={initialVehicles} />
                   {comparisonTarget?.position && (
                     <Marker position={comparisonTarget.position} icon={taskLocationMapIcon} zIndexOffset={9000}>
@@ -2059,19 +3108,36 @@ export default function App() {
                     aria-label="車輛狀態篩選"
                   >
                     <ToggleButton value="all">總覽 (91)</ToggleButton>
-                    <ToggleButton value="abnormal"><WarningAmberOutlined />異常 ({fleetStatusCounts.abnormal})</ToggleButton>
+                    <ToggleButton value="running">執行中 ({fleetStatusCounts.running})</ToggleButton>
+                    <ToggleButton value="abnormal"><WarningRounded />異常 ({fleetStatusCounts.abnormal})</ToggleButton>
                   </ToggleButtonGroup>
                 </Stack>
                 <Stack direction="row" spacing={2} alignItems="center">
+                  <Box className="timeline-scale-control">
+                    <Typography variant="caption">時間刻度</Typography>
+                    <Slider
+                      size="small"
+                      min={0}
+                      max={TIMELINE_SCALE_OPTIONS.length - 1}
+                      step={1}
+                      marks={TIMELINE_SCALE_OPTIONS.map((_, index) => ({ value: index }))}
+                      value={TIMELINE_SCALE_OPTIONS.indexOf(timelineScaleMinutes)}
+                      valueLabelDisplay="off"
+                      onChange={(_, index) => setTimelineScaleMinutes(TIMELINE_SCALE_OPTIONS[index])}
+                      aria-label="調整時間軸刻度"
+                    />
+                    <Typography className="timeline-scale-value" variant="caption">{timelineScaleMinutes} 分</Typography>
+                  </Box>
+                  <Divider orientation="vertical" className="timeline-toolbar-divider" />
                   <FormControlLabel
                     className="dispatch-compare-toggle"
-                    label="顯示原規劃"
+                    label="顯示實際狀況"
                     control={(
-                      <Switch
+                      <Checkbox
                         size="small"
-                        checked={compareDispatchPlan}
-                        onChange={(event) => setCompareDispatchPlan(event.target.checked)}
-                        inputProps={{ 'aria-label': '顯示原規劃' }}
+                        checked={showActualExecution}
+                        onChange={(event) => setShowActualExecution(event.target.checked)}
+                        inputProps={{ 'aria-label': '顯示實際狀況' }}
                       />
                     )}
                   />
@@ -2083,42 +3149,34 @@ export default function App() {
                 </Stack>
               </Box>
               <Timeline
-                vehicles={filteredVehicles}
-                candidates={candidates}
+                vehicles={timelineVehicles}
+                candidates={timelineCandidates}
                 selectedTask={assessmentTask}
+                selectedDriverName={selectedDriverName}
+                hasAvailableCandidates={candidates.length > 0}
                 activeCandidate={activeCandidate}
                 hoveredCandidate={hoveredCandidate}
-                onSelectCandidate={selectCandidatePreview}
+                onSelectCandidate={(candidate) => selectDriverForTask(candidate.driverName)}
                 onHoverCandidate={setHoveredCandidate}
                 onDropTask={dropTaskOnCandidate}
                 onLocateVehicle={locateVehicleFromTimeline}
+                onReassignTask={openTimelineTaskAssignmentPanel}
                 insertedTasks={insertedTasks}
                 highlightedVehicleId={focusedVehicleId}
-                compareMode={compareDispatchPlan}
+                compareMode={showActualExecution}
+                scaleMinutes={timelineScaleMinutes}
+                showRequestedWindow={Boolean(assessmentTask)}
                 dragActive={Boolean(draggedTask)}
               />
-              <Box className="timeline-legend">
-                {['early', 'ontime', 'delayed'].map((state) => <Stack key={state} direction="row" spacing={0.6} alignItems="center"><Box className="legend-dot" sx={{ bgcolor: statusMeta[state].color }} /><Typography variant="caption">{statusMeta[state].label}</Typography></Stack>)}
-                {compareDispatchPlan && (
-                  <>
-                    <Divider orientation="vertical" flexItem />
-                    <Stack direction="row" spacing={0.6} alignItems="center"><Box className="legend-planned" /><Typography variant="caption">原派車規劃</Typography></Stack>
-                  </>
-                )}
-                {assessmentTask && (
-                  <>
-                    <Divider orientation="vertical" flexItem />
-                    <Stack direction="row" spacing={0.6} alignItems="center"><Box className="legend-candidate" /><Typography variant="caption">候選空檔</Typography></Stack>
-                  </>
-                )}
-              </Box>
             </Paper>
 
             </Box>
           </Box>
+          </>
+          )}
         </main>
       </Box>
-      {!orderQueueOpen && (
+      {activePage === 'monitoring' && !orderQueueOpen && (
         <Fab
           variant="extended"
           color="primary"
@@ -2131,27 +3189,45 @@ export default function App() {
           <Box component="span" className="order-queue-fab-count">{otherTasks.length}</Box>
         </Fab>
       )}
-      <OrderQueuePanel
+      {activePage === 'monitoring' && <OrderQueuePanel
         open={orderQueueOpen}
+        width={orderQueueWidth}
         tasks={otherTasks}
         onClose={closeOrderQueue}
         onSelect={selectTask}
         selectedTask={selectedTask}
         onBackToQueue={clearTaskAssessment}
         candidates={candidates}
-        vehicles={initialVehicles}
+        selectedDriverName={selectedDriverName}
         activeCandidate={activeCandidate}
         hoveredCandidate={hoveredCandidate}
+        resolvedCandidatePairs={resolvedCandidatePairs}
+        onSelectDriver={selectDriverForTask}
         onSelectCandidate={selectCandidatePreview}
         onHoverCandidate={setHoveredCandidate}
+        onResolveImpact={resolveCandidateImpact}
         onConfirm={confirmInsertion}
-        onDragStart={startDrag}
-        onDragEnd={finishDrag}
+        confirming={assignmentLoading}
         onViewLocation={viewSelectedTaskLocation}
-      />
+        onFocusTimeline={focusTaskInTimeline}
+        onResizeStart={startOrderQueueResize}
+        onResizeKeyDown={resizeOrderQueueWithKeyboard}
+      />}
       <KeyInDialog open={keyInOpen} onClose={() => setKeyInOpen(false)} onCreate={createKeyedTask} />
+      <DriverReassignmentDialog
+        open={reassignmentDialogOpen}
+        impact={pendingDriverReassignment}
+        onSkip={skipDriverReassignment}
+        onForward={openDriverReassignmentPanel}
+      />
       <Snackbar open={Boolean(snackbarMessage)} autoHideDuration={4000} onClose={() => setSnackbarMessage('')} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
-        <Alert severity="success" variant="filled" onClose={() => setSnackbarMessage('')}>{snackbarMessage}</Alert>
+        <Alert
+          severity="success"
+          variant="filled"
+          onClose={() => setSnackbarMessage('')}
+        >
+          {snackbarMessage}
+        </Alert>
       </Snackbar>
     </Box>
   );
