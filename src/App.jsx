@@ -1715,9 +1715,13 @@ const getTaskProjectedDelayMinutes = (vehicle, task) => {
   return plannedDwellMinutes + confirmedDelayMinutes;
 };
 
-const getRelevantVehicleTask = (vehicle) => (
+const getVehicleDestinationTask = (vehicle) => (
   vehicle.tasks.find((task) => task.start <= NOW_HOUR && task.end >= NOW_HOUR)
   || vehicle.tasks.find((task) => task.start > NOW_HOUR)
+);
+
+const getRelevantVehicleTask = (vehicle) => (
+  getVehicleDestinationTask(vehicle)
   || vehicle.tasks[vehicle.tasks.length - 1]
 );
 
@@ -4104,7 +4108,7 @@ export default function App() {
   const focusVehicleFromMap = (vehicle) => {
     setOverviewFilter('all');
     setFocusedVehicleId(vehicle.id);
-    const destinationTask = getRelevantVehicleTask(vehicle);
+    const destinationTask = getVehicleDestinationTask(vehicle);
     if (destinationTask) {
       const destinationPosition = getStationMapPosition(vehicle, destinationTask);
       setStationMapFocus({
@@ -4146,9 +4150,24 @@ export default function App() {
         source: 'station',
       });
       setMapFocusRequest({ positions: [vehicle.position, stationPosition], requestId: Date.now() });
-    } else if (!focusVehicleAgainstOrder(vehicle.id)) {
-      setStationMapFocus(null);
-      setMapFocusRequest({ vehicleId: vehicle.id, requestId: Date.now() });
+    } else {
+      const destinationTask = getVehicleDestinationTask(vehicle);
+      if (destinationTask) {
+        const destinationPosition = getStationMapPosition(vehicle, destinationTask);
+        setStationMapFocus({
+          vehicleId: vehicle.id,
+          position: destinationPosition,
+          label: `前往站點｜${destinationTask.station}`,
+          source: 'station',
+        });
+        setMapFocusRequest({
+          positions: [vehicle.position, destinationPosition],
+          requestId: Date.now(),
+        });
+      } else {
+        setStationMapFocus(null);
+        setMapFocusRequest({ vehicleId: vehicle.id, requestId: Date.now() });
+      }
     }
     window.setTimeout(() => {
       const panel = document.querySelector('.context-map-panel');
