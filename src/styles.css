@@ -169,6 +169,8 @@ body { background: #f4f7fa; }
 .timeline-shell .timeline-task.planned-task.has-eta-warning .MuiTypography-root,
 .timeline-shell .timeline-task.planned-task.overdue-not-arrived .MuiTypography-root { font-weight: 500; }
 .timeline-shell.compare-mode .timeline-task.planned-task .MuiTypography-root { font-size: 14px; font-weight: 400; }
+.timeline-shell.compare-mode .timeline-task.planned-task.has-eta-warning .MuiTypography-root,
+.timeline-shell.compare-mode .timeline-task.planned-task.overdue-not-arrived .MuiTypography-root { font-weight: 500; }
 .timeline-shell.compare-mode .timeline-task.comparison-current { top: 54px; z-index: 5; box-sizing: border-box; height: 8px; min-width: 0; padding: 0; overflow: visible; border-radius: 4px; box-shadow: none; }
 .timeline-shell.compare-mode .timeline-task.comparison-current.historical-actual-status { border-width: 1px; }
 .timeline-shell.compare-mode .timeline-task.comparison-current::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 18px; transform: translateY(-50%); background: transparent; }

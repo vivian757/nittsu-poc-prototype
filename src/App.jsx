@@ -3501,7 +3501,7 @@ export default function App() {
   const [mapFocusRequest, setMapFocusRequest] = useState(null);
   const [sidebarExpanded, setSidebarExpanded] = useState(() => window.matchMedia('(min-width: 1180px)').matches);
   const [showActualExecution, setShowActualExecution] = useState(true);
-  const [timelineVisibleHours, setTimelineVisibleHours] = useState(12);
+  const [timelineVisibleHours, setTimelineVisibleHours] = useState(24);
   const [maximizedView, setMaximizedView] = useState(null);
 
   const navigateToPage = (page) => {
