@@ -53,7 +53,7 @@ const etaWarningComparison = [
   ['動態路況 API', '反映即時交通', '重算 ETA 偏差'],
 ];
 
-const DEFAULT_SETTINGS = {
+export const DEFAULT_MONITORING_SETTINGS = {
   detectionInterval: '5',
   geofenceRadius: '300',
   enterStableMinutes: '2',
@@ -61,6 +61,7 @@ const DEFAULT_SETTINGS = {
   earlyDepartureTolerance: '10',
   lateArrivalTolerance: '10',
   lateDepartureTolerance: '10',
+  taskConnectionGapMinutes: '30',
 };
 
 const timelineScenarios = [
@@ -448,8 +449,8 @@ function SettingsMockView({ settings, onChange }) {
       <Paper variant="outlined" className="monitoring-settings-form">
         <Box className="monitoring-settings-form-intro">
           <Box>
-            <Typography variant="h6">電子圍籬監控</Typography>
-            <Typography>目前僅示意可能的規則項目與初始值。</Typography>
+            <Typography variant="h6">監控規則設定</Typography>
+            <Typography>目前僅示意可能的監控與候選判斷規則及初始值。</Typography>
           </Box>
         </Box>
 
@@ -528,6 +529,27 @@ function SettingsMockView({ settings, onChange }) {
           />
         </Box>
 
+        <Box className="monitoring-settings-form-section">
+          <Stack direction="row" alignItems="center" spacing={1} className="monitoring-settings-form-title">
+            <AccessTimeRounded /><Typography variant="h6">空檔候選判斷</Typography>
+          </Stack>
+          <SettingField
+            label="任務銜接最小間隔"
+            helper="插單與前一任務、下一便次皆須保留此間隔；低於此值時仍提供候選並顯示警示，確認插單後顯示銜接時間不足提醒。"
+          >
+            <TextField
+              size="small"
+              type="number"
+              value={settings.taskConnectionGapMinutes}
+              onChange={setValue('taskConnectionGapMinutes')}
+              slotProps={{
+                htmlInput: { min: 0, step: 5, 'aria-label': '任務銜接最小間隔分鐘數' },
+                input: { endAdornment: <span className="setting-unit">分鐘</span> },
+              }}
+            />
+          </SettingField>
+        </Box>
+
       </Paper>
     </Box>
   );
@@ -598,13 +620,15 @@ function EtaWarningNotes({ anchorEl, onClose }) {
   );
 }
 
-export default function MonitoringSettingsPage() {
+export default function MonitoringSettingsPage({
+  settings = DEFAULT_MONITORING_SETTINGS,
+  onSettingsChange = () => {},
+}) {
   const [tab, setTab] = useState(0);
-  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [saved, setSaved] = useState(false);
   const [notesAnchorEl, setNotesAnchorEl] = useState(null);
 
-  const resetSettings = () => setSettings(DEFAULT_SETTINGS);
+  const resetSettings = () => onSettingsChange(DEFAULT_MONITORING_SETTINGS);
 
   return (
     <Box className="monitoring-settings-page">
@@ -624,7 +648,7 @@ export default function MonitoringSettingsPage() {
       </Box>
 
       <Alert className="monitoring-settings-note monitoring-settings-page-note" severity="info" icon={<InfoOutlined />}>
-        此頁用於釐清電子圍籬與時間差判斷，數值為討論起點，尚未形成正式系統設定。
+        此頁用於釐清電子圍籬、時間差與空檔候選判斷，數值為討論起點，尚未形成正式系統設定。
       </Alert>
 
       <EtaWarningNotes anchorEl={notesAnchorEl} onClose={() => setNotesAnchorEl(null)} />
@@ -642,7 +666,7 @@ export default function MonitoringSettingsPage() {
 
         {tab === 0
           ? <LogicClarificationView />
-          : <SettingsMockView settings={settings} onChange={setSettings} />}
+          : <SettingsMockView settings={settings} onChange={onSettingsChange} />}
 
         {tab === 1 && (
           <Box className="monitoring-settings-actions">

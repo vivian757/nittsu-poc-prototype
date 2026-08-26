@@ -1,6 +1,6 @@
 {
   "name": "NX POC Design System",
-  "designMd": "../DESIGN.md",
+  "designMd": "../Guideline/DESIGN.md",
   "northStar": "調度控制台",
   "density": "compact",
   "theme": "light",

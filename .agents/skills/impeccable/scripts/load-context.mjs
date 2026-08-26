@@ -36,7 +36,7 @@ import path from 'node:path';
 const PRODUCT_NAMES = ['PRODUCT.md', 'Product.md', 'product.md'];
 const DESIGN_NAMES = ['DESIGN.md', 'Design.md', 'design.md'];
 const LEGACY_NAMES = ['.impeccable.md'];
-const FALLBACK_DIRS = ['.agents/context', 'docs'];
+const FALLBACK_DIRS = ['Guideline', '.agents/context', 'docs'];
 
 /**
  * Resolve the directory that holds PRODUCT.md / DESIGN.md for

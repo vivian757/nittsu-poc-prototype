@@ -64,7 +64,7 @@ import {
   WarningRounded,
 } from '@mui/icons-material';
 import ChecklistManagementPage from './ChecklistManagementPage';
-import MonitoringSettingsPage from './MonitoringSettingsPage';
+import MonitoringSettingsPage, { DEFAULT_MONITORING_SETTINGS } from './MonitoringSettingsPage';
 
 const START_HOUR = 0;
 const END_HOUR = 24;
@@ -1538,8 +1538,7 @@ const getVehicleDriverOptions = (vehicle) => {
   }, firstVehicleTaskStart)];
 };
 
-const MIN_DRIVER_BUFFER_MINUTES = 20;
-const MIN_PREVIOUS_TASK_GAP_MINUTES = 30;
+const DEFAULT_TASK_CONNECTION_GAP_MINUTES = Number(DEFAULT_MONITORING_SETTINGS.taskConnectionGapMinutes);
 const OTHER_BUSINESS_VEHICLE_OPTION_LIMIT = 6;
 
 const getDriverAssignments = (driverName) => initialVehicles.flatMap((vehicle) => (
@@ -1581,7 +1580,11 @@ const alignCandidateToTaskWindow = (candidate, task) => ({
   taskId: task.id,
 });
 
-const buildCandidatePair = (candidate, driver) => {
+const buildCandidatePair = (
+  candidate,
+  driver,
+  taskConnectionGapMinutes = DEFAULT_TASK_CONNECTION_GAP_MINUTES,
+) => {
   const vehicle = initialVehicles.find((item) => item.id === candidate.vehicleId);
   if (!vehicle) return null;
   const driverAssignments = getDriverAssignments(driver.name).sort((a, b) => a.start - b.start);
@@ -1596,9 +1599,9 @@ const buildCandidatePair = (candidate, driver) => {
   const previousTaskGapMinutes = previousDriverTask
     ? Math.max(0, Math.round((candidate.start - previousDriverTask.end) * 60))
     : null;
-  const hasDownstreamConflict = bufferMinutes !== null && bufferMinutes < MIN_DRIVER_BUFFER_MINUTES;
-  const hasSufficientPreviousTaskGap = previousTaskGapMinutes === null
-    || previousTaskGapMinutes > MIN_PREVIOUS_TASK_GAP_MINUTES;
+  const hasDownstreamConflict = bufferMinutes !== null && bufferMinutes < taskConnectionGapMinutes;
+  const hasInsufficientPreviousTaskGap = previousTaskGapMinutes !== null
+    && previousTaskGapMinutes < taskConnectionGapMinutes;
   const isOvertimeCandidate = Boolean(previousDriverTask && !nextDriverTask);
 
   return {
@@ -1613,7 +1616,7 @@ const buildCandidatePair = (candidate, driver) => {
     nextVehicleTask,
     bufferMinutes,
     previousTaskGapMinutes,
-    hasSufficientPreviousTaskGap,
+    hasInsufficientPreviousTaskGap,
     hasDownstreamConflict,
     isOvertimeCandidate,
     pairId: `${candidate.taskId}-${candidate.vehicleId}-${driver.name}`,
@@ -1626,7 +1629,7 @@ const candidatePairIsAvailable = (candidate) => {
   if (!vehicle) return false;
   const vehicleAvailable = vehicle.tasks.every((task) => task.end <= candidate.start || task.start >= candidate.end);
   const driverAvailable = candidate.driverAssignments.every((task) => task.end <= candidate.start || task.start >= candidate.end);
-  return vehicleAvailable && driverAvailable && candidate.hasSufficientPreviousTaskGap;
+  return vehicleAvailable && driverAvailable;
 };
 
 const candidateFinishesBeforeNextDriverTask = (candidate, task) => {
@@ -2554,18 +2557,18 @@ function Timeline({ vehicles, candidates, selectedTask, selectedDriverName, acti
       {vehicles.map((vehicle) => {
         const candidate = candidates.find((item) => item.vehicleId === vehicle.id);
         const inserted = insertedTasks.filter((item) => item.vehicleId === vehicle.id);
-        const assignmentScopeTrips = selectedTask?.assignmentMode === 'reassign-driver'
+        const assignmentScopeTrip = selectedTask?.assignmentMode === 'reassign-driver'
           && selectedTask.fixedVehicleId === vehicle.id
-          ? new Set((selectedTask.assignmentTrips ?? [selectedTask.assignmentTrip]).map(String))
+          ? String(selectedTask.assignmentTrip)
           : null;
-        const reassignmentPreviewTasks = assignmentScopeTrips
-          ? vehicle.tasks.filter((task) => assignmentScopeTrips.has(String(getTaskTrip(task, vehicle))))
+        const reassignmentPreviewTasks = assignmentScopeTrip
+          ? vehicle.tasks.filter((task) => assignmentScopeTrip === String(getTaskTrip(task, vehicle)))
           : [];
         const reassignmentPreviewStart = reassignmentPreviewTasks.length
           ? Math.min(...reassignmentPreviewTasks.map((task) => getTaskPlannedRange(task).start))
           : null;
         const reassignmentPreviewLabel = reassignmentPreviewTasks.length
-          ? `便次 ${[...assignmentScopeTrips].join('、')}`
+          ? `便次 ${assignmentScopeTrip}`
           : null;
         const latestExecutedTaskId = [
           ...vehicle.tasks,
@@ -2619,7 +2622,7 @@ function Timeline({ vehicles, candidates, selectedTask, selectedDriverName, acti
                 </Box>
               )}
               {vehicle.tasks.map((task) => {
-                const isAssignmentScopeTask = assignmentScopeTrips?.has(String(getTaskTrip(task, vehicle)));
+                const isAssignmentScopeTask = assignmentScopeTrip === String(getTaskTrip(task, vehicle));
                 return (
                   <TaskBlock
                     key={task.id}
@@ -2762,6 +2765,7 @@ function OrderQueuePanel({
   onViewLocation,
   onResizeStart,
   onResizeKeyDown,
+  taskConnectionGapMinutes,
 }) {
   if (!open) return null;
 
@@ -2800,6 +2804,7 @@ function OrderQueuePanel({
           onClearSelection={onBackToQueue}
           onClosePanel={onClose}
           onViewLocation={onViewLocation}
+          taskConnectionGapMinutes={taskConnectionGapMinutes}
         />
       ) : (
         <>
@@ -2860,6 +2865,7 @@ function DriverCandidateCard({ candidate, vehicleCandidates, selected, activeCan
     : null;
   const impactCandidate = selectedVehicleCandidate ?? candidate;
   const hasDownstreamImpact = impactCandidate.hasDownstreamConflict;
+  const hasConnectionWarning = impactCandidate.hasInsufficientPreviousTaskGap || hasDownstreamImpact;
   const driverTimelineTask = candidate.previousDriverTask ?? candidate.nextDriverTask;
   const selectVehicle = (_, selectedCandidate) => {
     if (selectedCandidate) onSelectVehicle(selectedCandidate);
@@ -2915,14 +2921,14 @@ function DriverCandidateCard({ candidate, vehicleCandidates, selected, activeCan
                   ? `${candidate.nextDriverTask.station}・${formatHour(candidate.nextDriverTask.start)} 需抵達`
                   : '-'}
               </Typography>
-              {hasDownstreamImpact && (
-                <Stack className="candidate-impact-message" direction="row" spacing={0.5} alignItems="center">
-                  <WarningRounded />
-                  <Typography variant="caption">插單後的任務銜接時間不足</Typography>
-                </Stack>
-              )}
             </Box>
           </Box>
+          {hasConnectionWarning && (
+            <Stack className="candidate-impact-message" direction="row" spacing={0.5} alignItems="center">
+              <WarningRounded />
+              <Typography variant="caption">插單後任務銜接時間不足</Typography>
+            </Stack>
+          )}
         </Box>
       </Box>
       <Collapse in={selected && showVehiclePicker} unmountOnExit>
@@ -2949,10 +2955,9 @@ function DriverCandidateCard({ candidate, vehicleCandidates, selected, activeCan
   );
 }
 
-function DriverReassignmentDialog({ open, impact, onSkip, onForward }) {
+function DriverReassignmentDialog({ open, impact, onClose, onForward }) {
   if (!impact) return null;
-  const { impactedTask, routeName, fixedVehicleId, affectedTrips = [], affectedTasks = [] } = impact;
-  const affectedTripLabel = affectedTrips.join(', ');
+  const { impactedTask, routeName, fixedVehicleId, affectedTrip, affectedTasks = [] } = impact;
   const currentDriverName = impact.candidate?.driverName ?? impactedTask.assignedDriver ?? '-';
   const scopeStart = affectedTasks[0]?.start ?? impactedTask.start;
   const scopeEnd = affectedTasks.at(-1)?.end ?? impactedTask.end;
@@ -2960,24 +2965,29 @@ function DriverReassignmentDialog({ open, impact, onSkip, onForward }) {
   return (
     <Dialog
       open={open}
-      onClose={onSkip}
+      onClose={onClose}
       fullWidth
       maxWidth="xs"
       aria-labelledby="driver-reassignment-dialog-title"
     >
       <DialogTitle id="driver-reassignment-dialog-title" className="reassignment-dialog-title">
-        <Stack direction="row" spacing={1} alignItems="center">
-          <WarningRounded />
-          <Box>
-            <Typography variant="subtitle1">後續任務銜接時間不足</Typography>
-            <Typography variant="caption">請確認是否需變更司機</Typography>
-          </Box>
+        <Stack className="reassignment-dialog-title-row" direction="row" spacing={1} alignItems="center">
+          <Stack className="reassignment-dialog-title-copy" direction="row" spacing={1} alignItems="center">
+            <WarningRounded className="reassignment-dialog-warning-icon" />
+            <Box>
+              <Typography variant="subtitle1">插單後任務銜接時間不足</Typography>
+              <Typography variant="caption">請確認是否需變更司機</Typography>
+            </Box>
+          </Stack>
+          <IconButton className="reassignment-dialog-close" size="small" aria-label="關閉提醒" onClick={onClose}>
+            <CloseRounded />
+          </IconButton>
         </Stack>
       </DialogTitle>
       <DialogContent className="reassignment-dialog-content">
         <Paper variant="outlined" className="reassignment-task-card">
           <Typography className="reassignment-task-vehicle" variant="subtitle2">
-            {`路線 ${routeName ?? '-'} / 便次 ${affectedTripLabel || getTaskTrip(impactedTask)}`}
+            {`路線 ${routeName ?? '-'} / 便次 ${affectedTrip ?? getTaskTrip(impactedTask)}`}
           </Typography>
           <Stack className="reassignment-resource-meta" spacing={0.5}>
             <Stack direction="row" spacing={0.75} alignItems="center">
@@ -2998,7 +3008,7 @@ function DriverReassignmentDialog({ open, impact, onSkip, onForward }) {
         </Paper>
       </DialogContent>
       <DialogActions className="reassignment-dialog-actions">
-        <Button color="inherit" onClick={onSkip}>稍後處理</Button>
+        <Button color="inherit" onClick={onClose}>稍後處理</Button>
         <Button variant="contained" onClick={onForward}>變更指派</Button>
       </DialogActions>
     </Dialog>
@@ -3051,11 +3061,10 @@ function CandidateCard({ candidate, task, active, previewing, impactResolved, on
   );
 }
 
-function TaskPanel({ selectedTask, onDragStart, candidates, selectedDriverName, activeCandidate, hoveredCandidate, resolvedCandidatePairs, onSelectDriver, onSelectCandidate, onFocusVehicle, onHoverCandidate, onResolveImpact, onConfirm, confirming = false, onClearSelection, onClosePanel, onViewLocation, onFocusTimeline, embedded = false }) {
+function TaskPanel({ selectedTask, onDragStart, candidates, selectedDriverName, activeCandidate, hoveredCandidate, resolvedCandidatePairs, onSelectDriver, onSelectCandidate, onFocusVehicle, onHoverCandidate, onResolveImpact, onConfirm, confirming = false, onClearSelection, onClosePanel, onViewLocation, onFocusTimeline, taskConnectionGapMinutes, embedded = false }) {
   const [manualPickerOpen, setManualPickerOpen] = useState(false);
   const isDriverReassignment = selectedTask.assignmentMode === 'reassign-driver';
-  const assignmentTrips = selectedTask.assignmentTrips ?? (selectedTask.assignmentTrip ? [selectedTask.assignmentTrip] : []);
-  const assignmentTripLabel = assignmentTrips.join('、');
+  const assignmentTripLabel = selectedTask.assignmentTrip ?? '-';
   const driverCandidates = candidates.filter((candidate, index, items) => (
     items.findIndex((item) => item.driverName === candidate.driverName) === index
   ));
@@ -3229,6 +3238,7 @@ function TaskPanel({ selectedTask, onDragStart, candidates, selectedDriverName, 
               <ManualResourcePicker
                 task={selectedTask}
                 fixedVehicleId={isDriverReassignment ? selectedTask.fixedVehicleId : null}
+                taskConnectionGapMinutes={taskConnectionGapMinutes}
                 onDriverChange={onSelectDriver}
                 onVehicleChange={onFocusVehicle}
                 onSelect={onSelectCandidate}
@@ -3251,7 +3261,7 @@ function TaskPanel({ selectedTask, onDragStart, candidates, selectedDriverName, 
   );
 }
 
-function ManualResourcePicker({ task, fixedVehicleId = null, onSelect, onDriverChange, onVehicleChange }) {
+function ManualResourcePicker({ task, fixedVehicleId = null, taskConnectionGapMinutes, onSelect, onDriverChange, onVehicleChange }) {
   const [vehicleId, setVehicleId] = useState('');
   const [driverName, setDriverName] = useState('');
 
@@ -3277,6 +3287,7 @@ function ManualResourcePicker({ task, fixedVehicleId = null, onSelect, onDriverC
     onSelect(buildCandidatePair(
       { ...getTaskWindowRange(task), taskId: task.id, vehicleId: targetVehicleId },
       nextSelectedDriver,
+      taskConnectionGapMinutes,
     ));
   };
 
@@ -3288,6 +3299,7 @@ function ManualResourcePicker({ task, fixedVehicleId = null, onSelect, onDriverC
     onSelect(buildCandidatePair(
       { ...getTaskWindowRange(task), taskId: task.id, vehicleId: nextVehicleId },
       selectedDriver,
+      taskConnectionGapMinutes,
     ));
   };
 
@@ -3507,6 +3519,13 @@ export default function App() {
   const [showActualExecution, setShowActualExecution] = useState(true);
   const [timelineVisibleHours, setTimelineVisibleHours] = useState(24);
   const [maximizedView, setMaximizedView] = useState(null);
+  const [monitoringSettings, setMonitoringSettings] = useState(DEFAULT_MONITORING_SETTINGS);
+  const configuredTaskConnectionGapMinutes = monitoringSettings.taskConnectionGapMinutes === ''
+    ? Number.NaN
+    : Number(monitoringSettings.taskConnectionGapMinutes);
+  const taskConnectionGapMinutes = Number.isFinite(configuredTaskConnectionGapMinutes)
+    ? Math.max(0, configuredTaskConnectionGapMinutes)
+    : DEFAULT_TASK_CONNECTION_GAP_MINUTES;
 
   const navigateToPage = (page) => {
     setActivePage(page);
@@ -3599,7 +3618,7 @@ export default function App() {
           ...taskWindow,
           taskId: assessmentTask.id,
           vehicleId: assessmentTask.fixedVehicleId,
-        }, driver))
+        }, driver, taskConnectionGapMinutes))
         .filter((candidate) => candidate?.driverAssignments.every((task) => (
           task.end <= candidate.start || task.start >= candidate.end
         )))
@@ -3626,7 +3645,7 @@ export default function App() {
           distanceToPickupKm: assessmentTask.pickupPosition
             ? calculateDistanceKm(vehicle.position, assessmentTask.pickupPosition)
             : null,
-        }, driver);
+        }, driver, taskConnectionGapMinutes);
       })
       .filter(candidatePairIsAvailable)
       .filter((candidate) => candidateFinishesBeforeNextDriverTask(candidate, assessmentTask))
@@ -3636,7 +3655,7 @@ export default function App() {
         - (candidateB.distanceToPickupKm ?? Number.POSITIVE_INFINITY)
       ))
       .slice(0, OTHER_BUSINESS_VEHICLE_OPTION_LIMIT));
-  }, [assessmentTask]);
+  }, [assessmentTask, taskConnectionGapMinutes]);
   const driverTimelineCandidates = useMemo(() => {
     if (!assessmentTask) return [];
     const candidatesByDriver = new Map();
@@ -3798,40 +3817,19 @@ export default function App() {
     setDraggedTask(null);
   };
 
-  const getAffectedReassignmentScope = (impactedTask, originalDriverName) => {
+  const getReassignmentTripScope = (impactedTask) => {
     const fixedVehicle = initialVehicles.find((vehicle) => vehicle.id === impactedTask?.vehicleId);
     if (!fixedVehicle) return null;
     const impactedTrip = String(getTaskTrip(impactedTask, fixedVehicle));
-    const groupedTasks = [...fixedVehicle.tasks]
-      .sort((taskA, taskB) => taskA.start - taskB.start)
-      .reduce((groups, task) => {
-        const trip = String(getTaskTrip(task, fixedVehicle));
-        groups.set(trip, [...(groups.get(trip) ?? []), task]);
-        return groups;
-      }, new Map());
-    const tripGroups = [...groupedTasks.entries()]
-      .map(([trip, tasks]) => ({ trip, tasks, start: tasks[0].start, end: tasks.at(-1).end }))
-      .sort((groupA, groupB) => groupA.start - groupB.start);
-    const impactedIndex = tripGroups.findIndex((group) => group.trip === impactedTrip);
-    if (impactedIndex < 0) return null;
-
-    const affectedGroups = [];
-    for (let index = impactedIndex; index < tripGroups.length; index += 1) {
-      const group = tripGroups[index];
-      const keepsOriginalDriver = group.tasks.every((task) => (
-        (taskDriverOverrides[task.id] ?? task.assignedDriver ?? fixedVehicle.driver) === originalDriverName
-      ));
-      if (!keepsOriginalDriver) break;
-      affectedGroups.push(group);
-    }
-
-    const fallbackGroup = tripGroups[impactedIndex];
-    const resolvedGroups = affectedGroups.length ? affectedGroups : [fallbackGroup];
+    const affectedTasks = [...fixedVehicle.tasks]
+      .filter((task) => String(getTaskTrip(task, fixedVehicle)) === impactedTrip)
+      .sort((taskA, taskB) => taskA.start - taskB.start);
+    if (!affectedTasks.length) return null;
     return {
       fixedVehicleId: fixedVehicle.id,
       routeName: fixedVehicle.routeName,
-      affectedTrips: resolvedGroups.map((group) => group.trip),
-      affectedTasks: resolvedGroups.flatMap((group) => group.tasks),
+      affectedTrip: impactedTrip,
+      affectedTasks,
     };
   };
 
@@ -3843,9 +3841,8 @@ export default function App() {
       setAssignmentLoading(true);
       window.setTimeout(() => {
         const fixedVehicle = initialVehicles.find((vehicle) => vehicle.id === insertedTask.fixedVehicleId);
-        const assignmentTrips = insertedTask.assignmentTrips ?? [insertedTask.assignmentTrip];
         const affectedTaskIds = insertedTask.assignmentTaskIds ?? fixedVehicle?.tasks
-          .filter((task) => assignmentTrips.includes(String(getTaskTrip(task, fixedVehicle))))
+          .filter((task) => String(insertedTask.assignmentTrip) === String(getTaskTrip(task, fixedVehicle)))
           .map((task) => task.id) ?? [insertedTask.id];
         setTaskDriverOverrides((current) => affectedTaskIds.reduce((nextOverrides, taskId) => ({
           ...nextOverrides,
@@ -3886,10 +3883,7 @@ export default function App() {
       setSnackbarMessage('已指派，排程已更新');
 
       if (hasPendingReassignment) {
-        const reassignmentScope = getAffectedReassignmentScope(
-          insertionCandidate.nextDriverTask,
-          insertionCandidate.driverName,
-        );
+        const reassignmentScope = getReassignmentTripScope(insertionCandidate.nextDriverTask);
         const nextImpact = {
           candidate: insertionCandidate,
           impactedTask: insertionCandidate.nextDriverTask,
@@ -3911,24 +3905,12 @@ export default function App() {
   const openTaskAssignmentPanel = (task, vehicleId, originalDriverName, scope = null) => {
     if (!task || !vehicleId) return;
     const fixedVehicle = initialVehicles.find((vehicle) => vehicle.id === vehicleId);
-    const assignmentTrip = getTaskTrip(task, fixedVehicle);
-    const assignmentTrips = (scope?.affectedTrips?.length ? scope.affectedTrips : [String(assignmentTrip)])
-      .map(String);
+    const assignmentTrip = String(scope?.affectedTrip ?? getTaskTrip(task, fixedVehicle));
     const tripTasks = fixedVehicle?.tasks
-      .filter((item) => assignmentTrips.includes(String(getTaskTrip(item, fixedVehicle))))
+      .filter((item) => assignmentTrip === String(getTaskTrip(item, fixedVehicle)))
       .sort((taskA, taskB) => taskA.start - taskB.start) ?? [task];
     const tripStart = tripTasks[0]?.start ?? task.start;
     const tripEnd = tripTasks.at(-1)?.end ?? task.end;
-    const assignmentTripGroups = assignmentTrips.map((trip) => {
-      const tasks = tripTasks.filter((item) => String(getTaskTrip(item, fixedVehicle)) === trip);
-      const start = tasks[0]?.start ?? tripStart;
-      const end = tasks.at(-1)?.end ?? tripEnd;
-      return {
-        trip,
-        window: `${formatHour(start)}–${formatHour(end)}`,
-        stations: tasks.map((item) => item.station),
-      };
-    });
     if (!scope && tripStart <= NOW_HOUR) {
       setSnackbarMessage('執行中或已完成的便次不可回溯變更指派');
       return;
@@ -3943,8 +3925,6 @@ export default function App() {
       duration: `${Math.round((tripEnd - tripStart) * 60)} 分`,
       assignmentMode: 'reassign-driver',
       assignmentTrip,
-      assignmentTrips,
-      assignmentTripGroups,
       assignmentTaskIds: tripTasks.map((item) => item.id),
       assignmentStationCount: tripTasks.length,
       assignmentRoute: fixedVehicle?.routeName,
@@ -3979,7 +3959,7 @@ export default function App() {
       candidate.pairId ?? getCandidatePairId(candidate),
       getDriverImpactId(candidate),
     ]));
-    setSnackbarMessage('已安排接替司機，後續任務衝突已解除');
+    setSnackbarMessage('已安排接替司機，便次衝突已解除');
   };
 
   const createKeyedTask = (task) => {
@@ -4288,7 +4268,10 @@ export default function App() {
           {activePage === 'checklist' ? (
             <ChecklistManagementPage />
           ) : activePage === 'monitoring-settings' ? (
-            <MonitoringSettingsPage />
+            <MonitoringSettingsPage
+              settings={monitoringSettings}
+              onSettingsChange={setMonitoringSettings}
+            />
           ) : (
           <>
           <Box className="page-heading-row" sx={{ width: '100%', mb: '16px' }}>
@@ -4528,12 +4511,13 @@ export default function App() {
         onFocusTimeline={focusTaskInTimeline}
         onResizeStart={startOrderQueueResize}
         onResizeKeyDown={resizeOrderQueueWithKeyboard}
+        taskConnectionGapMinutes={taskConnectionGapMinutes}
       />}
       <KeyInDialog open={keyInOpen} onClose={() => setKeyInOpen(false)} onCreate={createKeyedTask} />
       <DriverReassignmentDialog
         open={reassignmentDialogOpen}
         impact={pendingDriverReassignment}
-        onSkip={skipDriverReassignment}
+        onClose={skipDriverReassignment}
         onForward={openDriverReassignmentPanel}
       />
       <Snackbar open={Boolean(snackbarMessage)} autoHideDuration={4000} onClose={() => setSnackbarMessage('')} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
