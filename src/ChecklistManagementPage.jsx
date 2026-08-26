@@ -78,7 +78,7 @@ function Status({ checked }) {
   return (
     <Stack direction="row" spacing={0.75} alignItems="center" className={checked ? 'checklist-status reviewed' : 'checklist-status pending'}>
       {checked ? <CheckCircleOutlineRounded /> : <PendingOutlined />}
-      <Typography component="span">{checked ? '已審核' : '未審核'}</Typography>
+      <Typography component="span">{checked ? '已點檢' : '未點檢'}</Typography>
     </Stack>
   );
 }
@@ -211,7 +211,7 @@ function ChecklistContent({ sections, editablePhases = [], phaseActions = {}, on
                 <Tooltip
                   arrow
                   placement="top"
-                  title={phaseActions[section.phase].checked ? '點擊切回未審核' : ''}
+                  title={phaseActions[section.phase].checked ? '點擊切回未點檢' : ''}
                 >
                   <span className="checklist-phase-action-wrap">
                     <Button
@@ -222,7 +222,7 @@ function ChecklistContent({ sections, editablePhases = [], phaseActions = {}, on
                       disabled={phaseActions[section.phase].disabled}
                       onClick={() => onCheckPhase(section.phase)}
                     >
-                      {phaseActions[section.phase].checked ? '已審核' : '審核'}
+                      {phaseActions[section.phase].checked ? '已點檢' : '點檢'}
                     </Button>
                   </span>
                 </Tooltip>
@@ -301,12 +301,12 @@ function SearchDrawer({ open, values, onClose, onApply, onReset }) {
               value={draft.preStatus ?? ''}
               onChange={(event) => setDraft((current) => ({ ...current, preStatus: event.target.value }))}
               renderValue={(value) => value
-                ? value === 'checked' ? '已審核' : '未審核'
-                : <span className="app-form-placeholder">選擇審核狀態</span>}
+                ? value === 'checked' ? '已點檢' : '未點檢'
+                : <span className="app-form-placeholder">選擇點檢狀態</span>}
             >
               <MenuItem value="">全部狀態</MenuItem>
-              <MenuItem value="checked">已審核</MenuItem>
-              <MenuItem value="pending">未審核</MenuItem>
+              <MenuItem value="checked">已點檢</MenuItem>
+              <MenuItem value="pending">未點檢</MenuItem>
             </Select>
           </Box>
           <Box className="app-form-field">
@@ -318,12 +318,12 @@ function SearchDrawer({ open, values, onClose, onApply, onReset }) {
               value={draft.postStatus ?? ''}
               onChange={(event) => setDraft((current) => ({ ...current, postStatus: event.target.value }))}
               renderValue={(value) => value
-                ? value === 'checked' ? '已審核' : '未審核'
-                : <span className="app-form-placeholder">選擇審核狀態</span>}
+                ? value === 'checked' ? '已點檢' : '未點檢'
+                : <span className="app-form-placeholder">選擇點檢狀態</span>}
             >
               <MenuItem value="">全部狀態</MenuItem>
-              <MenuItem value="checked">已審核</MenuItem>
-              <MenuItem value="pending">未審核</MenuItem>
+              <MenuItem value="checked">已點檢</MenuItem>
+              <MenuItem value="pending">未點檢</MenuItem>
             </Select>
           </Box>
         </Stack>
@@ -486,7 +486,7 @@ export default function ChecklistManagementPage() {
     }));
     setEditingPhases({ pre: false, post: false });
     setSnackbar(changed && phaseWasChecked
-      ? `${phase === 'pre' ? '作業前' : '作業後'}點呼已儲存，請重新審核`
+      ? `${phase === 'pre' ? '作業前' : '作業後'}點呼已儲存，請重新點檢`
       : `${phase === 'pre' ? '作業前' : '作業後'}點呼已儲存`);
   };
 
@@ -504,7 +504,7 @@ export default function ChecklistManagementPage() {
         sections,
         updatedAt: `${record.date} ${getCurrentTime()}`,
       } : record));
-      setSnackbar(`${phase === 'pre' ? '作業前' : '作業後'}已切回未審核`);
+      setSnackbar(`${phase === 'pre' ? '作業前' : '作業後'}已切回未點檢`);
       return;
     }
 
@@ -517,7 +517,7 @@ export default function ChecklistManagementPage() {
       sections,
       updatedAt: `${record.date} ${time}`,
     } : record));
-    setSnackbar(`${phase === 'pre' ? '作業前' : '作業後'}審核已完成`);
+    setSnackbar(`${phase === 'pre' ? '作業前' : '作業後'}點檢已完成`);
   };
   return (
     <Box
@@ -554,7 +554,7 @@ export default function ChecklistManagementPage() {
                 {filters.preStatus && (
                   <Chip
                     size="small"
-                    label={`作業前：${filters.preStatus === 'checked' ? '已審核' : '未審核'}`}
+                    label={`作業前：${filters.preStatus === 'checked' ? '已點檢' : '未點檢'}`}
                     onClick={() => setSearchOpen(true)}
                     onDelete={() => {
                       setFilters((current) => ({ ...current, preStatus: '' }));
@@ -565,7 +565,7 @@ export default function ChecklistManagementPage() {
                 {filters.postStatus && (
                   <Chip
                     size="small"
-                    label={`作業後：${filters.postStatus === 'checked' ? '已審核' : '未審核'}`}
+                    label={`作業後：${filters.postStatus === 'checked' ? '已點檢' : '未點檢'}`}
                     onClick={() => setSearchOpen(true)}
                     onDelete={() => {
                       setFilters((current) => ({ ...current, postStatus: '' }));
