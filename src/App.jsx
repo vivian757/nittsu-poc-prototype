@@ -151,6 +151,7 @@ const baseVehicles = [
   {
     id: 'NXA-4072',
     driver: '張育誠',
+    abnormalSortIndex: 4,
     routeName: 'TC5',
     trip: '2',
     position: [24.1738, 120.6181],
@@ -206,21 +207,72 @@ const baseVehicles = [
     gps: '14:29',
     load: 68,
     tasks: [
-      { id: 'TY9-1', label: 'TY9-1 牛奶便', station: '華通電腦', address: '桃園市蘆竹區新南路二段90號', start: 4.8, end: 6.2, state: 'ontime', arrivalVarianceMinutes: 12, departureVarianceMinutes: -7 },
+      { id: 'TY9-1', trip: '2', sequence: 1, label: 'TY9 便次 2', station: '華通電腦', address: '桃園市蘆竹區新南路二段90號', start: 13.15, end: 14.05, state: 'delayed', arrivalVarianceMinutes: 9, departureVarianceMinutes: 18 },
       {
         id: 'TY9-2',
-        label: 'TY9-2 牛奶便',
+        trip: '2',
+        sequence: 2,
+        label: 'TY9 便次 2',
         station: '大同公司',
         address: '桃園市大園區中山南路472號',
-        start: 14.3,
-        end: 15.7,
-        plannedStart: 14.2,
-        plannedEnd: 15.3,
-        // 已超過規劃抵達、但尚未超過規劃離站的未抵達情境。
-        // 僅供討論示意，不納入異常或實際延遲提示。
-        state: 'notArrived',
-        overdueNotArrived: true,
-        scenarioOnly: true,
+        start: 14.9,
+        end: 15.733333333333333,
+        plannedStart: 14.75,
+        plannedEnd: 15.583333333333334,
+        // 同一便次前站已確認離站，車輛正前往大同：
+        // 大同顯示橘色 ETA 預警，外層顯示預計延遲 24 分。
+        state: 'ready',
+        risk: true,
+        riskSourceSequence: 1,
+        projectedDelay: 24,
+      },
+      {
+        id: 'TY9-3',
+        trip: '2',
+        sequence: 3,
+        label: 'TY9 便次 2',
+        station: '國瑞汽車',
+        address: '桃園市中壢區定寧路73號',
+        start: 16.733333333333334,
+        end: 17.483333333333334,
+        plannedStart: 16.583333333333332,
+        plannedEnd: 17.333333333333332,
+        state: 'ready',
+      },
+      // 第 2 個便次沿用相同站序；便次間保留 105 分鐘空檔，
+      // 不將空檔誤判為車輛移動中。
+      {
+        id: 'TY9-5-1',
+        trip: '5',
+        sequence: 1,
+        label: 'TY9 便次 5',
+        station: '華通電腦',
+        address: '桃園市蘆竹區新南路二段90號',
+        start: 19.083333333333332,
+        end: 19.833333333333332,
+        state: 'ready',
+      },
+      {
+        id: 'TY9-5-2',
+        trip: '5',
+        sequence: 2,
+        label: 'TY9 便次 5',
+        station: '大同公司',
+        address: '桃園市大園區中山南路472號',
+        start: 20.833333333333332,
+        end: 21.666666666666668,
+        state: 'ready',
+      },
+      {
+        id: 'TY9-5-3',
+        trip: '5',
+        sequence: 3,
+        label: 'TY9 便次 5',
+        station: '國瑞汽車',
+        address: '桃園市中壢區定寧路73號',
+        start: 22.666666666666668,
+        end: 23.416666666666668,
+        state: 'ready',
       },
     ],
   },
@@ -288,6 +340,7 @@ const baseVehicles = [
   {
     id: 'NXA-3891',
     driver: '鄭宇翔',
+    hideExternalEtaSignal: true,
     routeName: 'HC9',
     trip: '4',
     position: [24.7775, 121.0089],
@@ -332,8 +385,8 @@ const baseVehicles = [
         end: 18.0,
         plannedStart: 13.1,
         plannedEnd: 14.1,
-        // 已超過規劃離站時間，但電子圍籬尚未產生抵達事件：
-        // 僅顯示「尚未抵達」，不產生尚未確定的延遲分鐘數。
+        // 前站仍在作業中，台中精機已超過規劃離站但尚未抵達：
+        // 台中精機顯示紅色，後一站保留橘色 ETA 預警，但不顯示車輛 icon。
         state: 'notArrived',
         overdueNotArrived: true,
         sequence: 2,
@@ -349,6 +402,7 @@ const baseVehicles = [
         end: 16.2,
         state: 'ready',
         risk: true,
+        showRiskWithoutExternalSignal: true,
         // ETA 延遲量＝台中精機規劃停留時間＋大立光電已確認延遲時間。
         etaPlannedDwellTaskId: 'TC3-3',
         etaDelaySourceTaskId: 'TC3-1',
@@ -523,9 +577,6 @@ const supplementalFutureTasksByVehicle = {
   'NXA-8416': [
     { id: 'HC6-5', label: 'HC6-5 牛奶便', station: '京元電子', address: '新竹縣寶山鄉創新一路4號', start: 16.8, end: 18.2, state: 'ready' },
   ],
-  'NXA-7304': [
-    { id: 'TY9-3', label: 'TY9-3 牛奶便', station: '國瑞汽車', address: '桃園市中壢區定寧路73號', start: 18.2, end: 19.6, state: 'ready' },
-  ],
   'NXA-7912': [
     { id: 'TY11-4', label: 'TY11-4 牛奶便', station: '南亞塑膠', address: '桃園市龜山區文明路6號', start: 18.2, end: 19.6, state: 'ready' },
   ],
@@ -536,7 +587,8 @@ const supplementalFutureTasksByVehicle = {
     { id: 'TC3-4', label: 'TC3-4 牛奶便', station: '上銀科技', address: '台中市南屯區精科路7號', start: 17.8, end: 19.3, state: 'ready', sequence: 1 },
   ],
   'NXA-4072': [
-    { id: 'TC5-3', label: 'TC5-3 牛奶便', station: '矽品精密', address: '台中市潭子區大豐路三段123號', start: 16.2, end: 17.6, state: 'ready', risk: true, etaFromPreviousTask: true, etaTravelMinutes: 8 },
+    // 後續站點目前沒有可採用的 ETA，只保留規劃，不顯示預計延遲。
+    { id: 'TC5-3', label: 'TC5-3 牛奶便', station: '矽品精密', address: '台中市潭子區大豐路三段123號', start: 16.2, end: 17.6, state: 'ready' },
   ],
   'NXA-3891': [
     { id: 'HC9-5', label: 'HC9-5 牛奶便', station: '台積電十二廠', address: '新竹市東區力行六路8號', start: 16.2, end: 17.6, state: 'ready' },
@@ -577,6 +629,7 @@ const MILK_RUN_STOP_DURATION_MINUTES = [40, 48, 57, 66, 78, 89, 103, 112, 120];
 const MILK_RUN_STOP_DURATION_OVERRIDES_MINUTES = {
   DBC2: [180],
   MAC8: [270],
+  TY9: [45, 50, 45],
 };
 const MILK_RUN_TRAVEL_GAP_OVERRIDES_MINUTES = {
   TC5: 8,
@@ -587,6 +640,7 @@ const MILK_RUN_TRAVEL_GAP_OVERRIDES_MINUTES = {
   HC9: 8,
   TC3: 12,
   MAC9: 30,
+  TY9: 60,
   TYO2: 12,
 };
 const MILK_RUN_TRIP_GAP_MINUTES = [45, 60, 75, 90, 105, 120, 135, 150];
@@ -604,6 +658,7 @@ const MILK_RUN_TRIP_GAP_OVERRIDES_MINUTES = {
 const MILK_RUN_DAY_START_OVERRIDES = {
   'NXA-3155': 0.75,
   'NXA-6835': 0,
+  'NXA-7304': 13,
   // 移動中示例：前站已在 14:30 前確認離站，下一站尚未抵達。
   'NXA-8416': 3.733333333333333,
 };
@@ -613,6 +668,7 @@ const MILK_RUN_STOP_COUNT_OVERRIDES = {
   MCC7: 5,
   SDK1: 5,
   MAC4: 3,
+  TY9: 3,
   TYO2: 2,
 };
 const MILK_RUN_ADDITIONAL_STOPS = [
@@ -1068,8 +1124,53 @@ const initialVehicles = [...baseVehicles, ...generatedOverviewVehicles, ...other
       ...task,
       end,
       state,
+      ...(vehicle.id === 'NXA-5188' && task.id === 'TY7-3-02'
+        ? {
+          // 台達電子已提早 12 分抵達，14:30 仍在站內作業。
+          start: 13.4,
+          end: 15.0,
+          plannedStart: 13.6,
+          plannedEnd: 14.4,
+          state: 'running',
+          arrivalVarianceMinutes: undefined,
+          departureVarianceMinutes: undefined,
+          departureConfirmed: false,
+          earlyMinutes: 12,
+        }
+        : {}),
       ...(vehicle.id === 'NXA-4620' && task.id === 'TC3-3-01'
-        ? { departureConfirmed: true }
+        ? {
+          start: 11.85,
+          end: 15.0,
+          plannedStart: 11.75,
+          plannedEnd: 12.9,
+          state: 'running',
+          arrivalVarianceMinutes: undefined,
+          departureVarianceMinutes: undefined,
+          departureConfirmed: false,
+          overdueNotArrived: false,
+          overdueDepartureSignal: true,
+          delay: undefined,
+        }
+        : {}),
+      ...(vehicle.id === 'NXA-4620' && task.id === 'TC3-3-02'
+        ? {
+          start: 13.6,
+          end: 18.0,
+          plannedStart: 13.1,
+          plannedEnd: 14.1,
+          state: 'notArrived',
+          arrivalVarianceMinutes: undefined,
+          departureVarianceMinutes: undefined,
+          departureConfirmed: false,
+          overdueNotArrived: true,
+          risk: true,
+          etaFromPreviousTask: true,
+          etaTravelMinutes: 18,
+          etaIsMinimum: true,
+          scenarioOnly: false,
+          delay: undefined,
+        }
         : {}),
     };
   });
@@ -1175,7 +1276,34 @@ const getPotentiallyDelayedStationIds = (vehicle) => {
 };
 const getPotentiallyDelayedStationCount = (vehicle) => getPotentiallyDelayedStationIds(vehicle).size;
 const vehicleHasAbnormal = (vehicle) => vehicleNeedsAttention(vehicle);
-const vehicleIsRunning = (vehicle) => ['running', 'delayed'].includes(vehicle.status);
+const vehicleHasActiveMovingPhase = (vehicle) => {
+  const orderedTasks = [...vehicle.tasks].sort((taskA, taskB) => (
+    getTaskPlannedRange(taskA).start - getTaskPlannedRange(taskB).start
+  ));
+
+  return orderedTasks.some((fromTask, index) => {
+    const toTask = orderedTasks[index + 1];
+    if (!toTask) return false;
+
+    const isSameTrip = String(getTaskTrip(fromTask, vehicle)) === String(getTaskTrip(toTask, vehicle));
+    const hasConfirmedDeparture = Boolean(
+      fromTask.departureConfirmed || Number.isFinite(fromTask.departureVarianceMinutes)
+    );
+    const nextStopHasNotArrived = toTask.state === 'ready' || Boolean(toTask.overdueNotArrived);
+
+    return isSameTrip
+      && hasConfirmedDeparture
+      && fromTask.state !== 'running'
+      && fromTask.end <= NOW_HOUR
+      && nextStopHasNotArrived
+      && (toTask.end > NOW_HOUR || toTask.overdueNotArrived);
+  });
+};
+const vehicleIsRunning = (vehicle) => (
+  // 「執行中」是上層狀態：包含站內作業，以及同便次站點間移動。
+  ['running', 'delayed'].includes(vehicle.status)
+  || vehicleHasActiveMovingPhase(vehicle)
+);
 const vehicleHasCurrentOrFutureTask = (vehicle) => vehicle.tasks.some((task) => task.end > NOW_HOUR);
 const getVehicleTimelineGroupOrder = (vehicle) => (
   vehicle.serviceType === 'other-business' ? 1 : 0
@@ -1724,7 +1852,14 @@ const getTaskProjectedDelayMinutes = (vehicle, task) => {
     const previousPlanned = getTaskPlannedRange(previousTask);
     const nextPlanned = getTaskPlannedRange(task);
     const plannedDwellHours = Math.max(0, previousPlanned.end - previousPlanned.start);
-    const projectedArrival = previousTask.start + plannedDwellHours + (travelMinutes / 60);
+    // 尚未離站時，ETA 不能停在「抵達時間＋規劃作業時間」。
+    // 一旦已超過該時間，改以現在出發作為最佳情境下限，再加動態行車時間。
+    const earliestDeparture = Math.max(
+      NOW_HOUR,
+      previousPlanned.end,
+      previousTask.start + plannedDwellHours,
+    );
+    const projectedArrival = earliestDeparture + (travelMinutes / 60);
     return Math.max(0, Math.round((projectedArrival - nextPlanned.start) * 60));
   }
   if (Number.isFinite(task?.projectedDelay)) return Number(task.projectedDelay);
@@ -1772,6 +1907,16 @@ const taskHasConfirmedDeparture = (task) => Boolean(
   task?.departureConfirmed || Number.isFinite(task?.departureVarianceMinutes)
 );
 
+const getVehicleCurrentEtaTask = (vehicle) => [...vehicle.tasks]
+  .filter((task) => (
+    taskHasSupportedEtaRisk(vehicle, task)
+    && Number(getTaskProjectedDelayMinutes(vehicle, task)) > ON_TIME_TOLERANCE_MINUTES
+    && (task.overdueNotArrived || getTaskPlannedRange(task).end > NOW_HOUR)
+  ))
+  .sort((taskA, taskB) => (
+    getTaskPlannedRange(taskA).start - getTaskPlannedRange(taskB).start
+  ))[0] ?? null;
+
 const getVehicleOperationInsight = (vehicle) => {
   const orderedTasks = [...vehicle.tasks].sort((taskA, taskB) => (
     getTaskPlannedRange(taskA).start - getTaskPlannedRange(taskB).start
@@ -1811,13 +1956,7 @@ const getVehicleOperationInsight = (vehicle) => {
     };
   }
 
-  const etaTask = orderedTasks
-    .filter((task) => (
-      taskHasSupportedEtaRisk(vehicle, task)
-      && Number(getTaskProjectedDelayMinutes(vehicle, task)) > ON_TIME_TOLERANCE_MINUTES
-      && getTaskPlannedRange(task).end > NOW_HOUR
-    ))
-    .sort((taskA, taskB) => getTaskPlannedRange(taskA).start - getTaskPlannedRange(taskB).start)[0] ?? null;
+  const etaTask = getVehicleCurrentEtaTask(vehicle);
 
   if (etaTask) {
     const etaPlanned = getTaskPlannedRange(etaTask);
@@ -1913,6 +2052,9 @@ const vehicleNeedsAttention = (vehicle) => Boolean(getVehicleOperationInsight(ve
 const getVehicleAttentionPriority = (vehicle) => (
   getVehicleOperationInsight(vehicle)?.priority ?? Number.MAX_SAFE_INTEGER
 );
+const getVehicleEtaAvailabilityOrder = (vehicle) => (
+  getVehicleCurrentEtaTask(vehicle) ? 0 : 1
+);
 const getVehicleAttentionDelayMinutes = (vehicle) => (
   getVehicleOperationInsight(vehicle)?.delayMinutes ?? 0
 );
@@ -1938,7 +2080,7 @@ const getMovingIndicatorHour = (fromTask, toTask) => {
     : Math.max(gapStart + 0.02, Math.min(selectedCandidate, visuallySeparatedHour));
 };
 const fleetStatusCounts = {
-  running: 68,
+  running: initialVehicles.filter(vehicleIsRunning).length,
   abnormal: initialVehicles.filter(vehicleNeedsAttention).length,
 };
 
@@ -2130,8 +2272,14 @@ const taskLocationMapIcon = L.divIcon({
 const VEHICLE_ICON_MARKUP = `
     <svg viewBox="0 0 36 28" aria-hidden="true" focusable="false">
       <ellipse cx="18" cy="23.5" rx="15" ry="2" fill="rgba(39,51,64,.16)"/>
-      <rect x="3" y="6" width="20" height="13" rx="2.4" fill="#6B7B8C"/>
-      <path d="M23 9h5.7l4.3 5.2V19H23V9Z" fill="#536272"/>
+      <g class="vehicle-icon-halo" fill="none" stroke="#F8FAFC" stroke-width="2" stroke-linejoin="round">
+        <rect x="3" y="6" width="20" height="13" rx="2.4"/>
+        <path d="M23 9h5.7l4.3 5.2V19H23V9Z"/>
+        <circle cx="9" cy="20.5" r="3.2"/>
+        <circle cx="27.5" cy="20.5" r="3.2"/>
+      </g>
+      <rect class="vehicle-icon-cargo" x="3" y="6" width="20" height="13" rx="2.4"/>
+      <path class="vehicle-icon-cab" d="M23 9h5.7l4.3 5.2V19H23V9Z"/>
       <path d="M25 10.8h3.1l2.6 3.1H25v-3.1Z" fill="#DCE7EF"/>
       <path d="M3 18.7h30" fill="none" stroke="#3E4B59" stroke-width="1.4" stroke-linecap="round"/>
       <circle cx="9" cy="20.5" r="3.2" fill="#34404C"/>
@@ -2200,7 +2348,11 @@ function VehicleInfo({ vehicle, onLocate, assignedCustomer, assignedDriver }) {
     ?? upcomingVehicleTask?.customer
     ?? null;
   const hasCurrentOrFutureTask = vehicleHasCurrentOrFutureTask(vehicle) || Boolean(assignedCustomer);
-  const displayedDriver = assignedDriver ?? (vehicle.driver === '待指派' ? null : vehicle.driver);
+  const displayedDriverCandidate = assignedDriver
+    ?? activeVehicleTask?.assignedDriver
+    ?? upcomingVehicleTask?.assignedDriver
+    ?? vehicle.driver;
+  const displayedDriver = displayedDriverCandidate === '待指派' ? null : displayedDriverCandidate;
   const abnormalMessage = '行程延遲，可能影響後續站點';
   return (
     <Box className={`vehicle-info ${hasAbnormal ? 'has-risk' : ''}`}>
@@ -2249,7 +2401,7 @@ function VehicleInfo({ vehicle, onLocate, assignedCustomer, assignedDriver }) {
 }
 
 function createVehicleMapIcon(vehicle, hasAbnormal, focused, emphasized) {
-  const warningIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 9v5"/><path d="M12 17.5h.01"/></svg>';
+  const warningIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path class="warning-triangle" d="M12 2.8 22 21H2L12 2.8Z"/><path class="warning-mark" d="M12 8.5v6"/><circle class="warning-dot" cx="12" cy="18" r="1.15"/></svg>';
 
   return L.divIcon({
     className: 'vehicle-marker-root',
@@ -2262,6 +2414,8 @@ function createVehicleMapIcon(vehicle, hasAbnormal, focused, emphasized) {
 
 function VehicleMapPin({ vehicle, focused, emphasized, onOpen }) {
   const task = getRelevantVehicleTask(vehicle);
+  const displayedDriverCandidate = task?.assignedDriver ?? vehicle.driver;
+  const displayedDriver = displayedDriverCandidate === '待指派' ? null : displayedDriverCandidate;
   const planned = getTaskPlannedRange(task);
   const activeTask = vehicle.tasks.find((item) => item.start <= NOW_HOUR && item.end > NOW_HOUR);
   const isActiveOtherBusiness = Boolean(
@@ -2280,7 +2434,8 @@ function VehicleMapPin({ vehicle, focused, emphasized, onOpen }) {
   const hasStarted = !overdueNotArrived && task.state !== 'ready' && task.start <= NOW_HOUR;
   const hasDeparted = hasStarted && task.end <= NOW_HOUR;
   const projectedDelayMinutes = getTaskProjectedDelayMinutes(vehicle, task);
-  const hasEtaWarning = taskHasSupportedEtaRisk(vehicle, task)
+  const hasEtaWarning = getVehicleCurrentEtaTask(vehicle)?.id === task.id
+    && taskHasSupportedEtaRisk(vehicle, task)
     && Number.isFinite(projectedDelayMinutes);
   const projectedArrival = hasEtaWarning
     ? planned.start + (projectedDelayMinutes / 60)
@@ -2309,9 +2464,9 @@ function VehicleMapPin({ vehicle, focused, emphasized, onOpen }) {
     <Marker
       position={vehicle.position}
       icon={markerIcon}
-      zIndexOffset={focused ? 10000 : hasAbnormal ? 500 : 0}
+      zIndexOffset={focused ? 30000 : emphasized ? 10000 : hasAbnormal ? 500 : 0}
       riseOnHover
-      riseOffset={12000}
+      riseOffset={focused ? 1000 : 12000}
       eventHandlers={{ click: () => onOpen(vehicle) }}
     >
       <LeafletTooltip direction="bottom" opacity={1} permanent={focused && !emphasized} className="vehicle-leaflet-tooltip">
@@ -2321,7 +2476,9 @@ function VehicleMapPin({ vehicle, focused, emphasized, onOpen }) {
               <Typography variant="subtitle2" fontWeight={750}>{vehicle.id}</Typography>
             </Box>
           </Stack>
-          <Box className="map-tooltip-row"><span>當前司機</span><b>{vehicle.driver}</b></Box>
+          {displayedDriver && (
+            <Box className="map-tooltip-row"><span>當前司機</span><b>{displayedDriver}</b></Box>
+          )}
           {isActiveOtherBusiness ? (
             <Box className="map-tooltip-row"><span>他向業務</span><b>{activeTask.customer}</b></Box>
           ) : (
@@ -2386,7 +2543,7 @@ function VehicleMapPin({ vehicle, focused, emphasized, onOpen }) {
   );
 }
 
-function TaskBlock({ task, vehicle, compareMode, visibleHours, isLatestExecutedTask = false, hideExternalDepartureDifference = false, highlighted, onHighlight, onLocate, onReassign }) {
+function TaskBlock({ task, vehicle, compareMode, visibleHours, isLatestExecutedTask = false, showExternalTimeDifference = false, showEtaSignal = false, hideExternalEtaSignal = false, hideExternalDepartureDifference = false, highlighted, onHighlight, onLocate, onReassign }) {
   const meta = statusMeta[task.state] || statusMeta.running;
   const planned = getTaskPlannedRange(task);
   const plannedLeft = toPercent(planned.start);
@@ -2429,22 +2586,32 @@ function TaskBlock({ task, vehicle, compareMode, visibleHours, isLatestExecutedT
   const departureDifferenceState = getDifferenceState(departureDifferenceMinutes);
   const departureDifferenceLabel = getDifferenceLabel(departureDifferenceMinutes, '離站');
   const departureDifferenceValue = getDifferenceValue(departureDifferenceMinutes);
+  const showCurrentOverdueDepartureWarning = compareMode
+    && task.overdueDepartureSignal
+    && hasStarted
+    && !hasDeparted
+    && task.state !== 'offline'
+    && planned.end < NOW_HOUR;
   // Only the latest confirmed status for each vehicle keeps its semantic color.
   // Historical actual bars stay neutral so the current operational signal stands out.
   const historicalActualMeta = timelineActualStatusMeta.ontime;
   const arrivalMeta = isLatestExecutedTask
-    ? timelineActualStatusMeta[arrivalDifferenceState]
+    ? timelineActualStatusMeta[showCurrentOverdueDepartureWarning ? 'delayed' : arrivalDifferenceState]
     : historicalActualMeta;
   const departureMeta = isLatestExecutedTask
     ? timelineActualStatusMeta[departureDifferenceState]
     : historicalActualMeta;
-  const arrivalStatusLabel = arrivalDifferenceState === 'ontime' ? '' : arrivalDifferenceValue;
+  const arrivalStatusLabel = showCurrentOverdueDepartureWarning
+    ? '已超過規劃離站'
+    : arrivalDifferenceState === 'ontime' ? '' : arrivalDifferenceValue;
   const departureStatusLabel = hasDeparted && departureDifferenceState !== 'ontime'
     ? departureDifferenceValue
     : '';
-  const actualBarState = hasDeparted
-    ? departureDifferenceState
-    : arrivalDifferenceState;
+  const actualBarState = showCurrentOverdueDepartureWarning
+    ? 'delayed'
+    : hasDeparted
+      ? departureDifferenceState
+      : arrivalDifferenceState;
   const actualBarMeta = isLatestExecutedTask
     ? timelineActualStatusMeta[actualBarState]
     : historicalActualMeta;
@@ -2455,7 +2622,7 @@ function TaskBlock({ task, vehicle, compareMode, visibleHours, isLatestExecutedT
   const compactEndpointDisplay = visibleHours >= 6;
   const showTaskDifference = !compactDifferenceDisplay || isLatestExecutedTask;
   const showTaskEndpoint = !compactEndpointDisplay || isLatestExecutedTask;
-  const showArrivalDifferenceEndpoint = arrivalDifferenceState !== 'ontime'
+  const showArrivalDifferenceEndpoint = (arrivalDifferenceState !== 'ontime' || showCurrentOverdueDepartureWarning)
     && showTaskEndpoint
     && (!compactEndpointDisplay || !hasDeparted);
   const showDepartureDifferenceEndpoint = hasDeparted
@@ -2463,26 +2630,31 @@ function TaskBlock({ task, vehicle, compareMode, visibleHours, isLatestExecutedT
     && showTaskEndpoint;
   const showArrivalDifference = showArrivalDifferenceEndpoint
     && showTaskDifference
+    && showExternalTimeDifference
     && (!compactDifferenceDisplay || !hasDeparted);
   const showDepartureDifference = showDepartureDifferenceEndpoint
     && showTaskDifference
+    && showExternalTimeDifference
     && !hideExternalDepartureDifference;
   const showTimeDifference = arrivalDifferenceState !== 'ontime'
     || (hasDeparted && departureDifferenceState !== 'ontime');
-  const hasEtaWarning = taskHasSupportedEtaRisk(vehicle, task);
+  const hasSupportedEtaWarning = taskHasSupportedEtaRisk(vehicle, task);
+  const hasEtaWarning = showEtaSignal && hasSupportedEtaWarning;
+  const hasEtaWarningStyle = hasEtaWarning
+    || (task.showRiskWithoutExternalSignal && hasSupportedEtaWarning);
   const projectedDelayMinutes = getTaskProjectedDelayMinutes(vehicle, task);
   const hasProjectedDelay = Number.isFinite(projectedDelayMinutes);
   const projectedArrival = hasProjectedDelay
     ? planned.start + (projectedDelayMinutes / 60)
     : null;
-  const timelineSignal = hasEtaWarning
+  const timelineSignal = hasEtaWarning && !hideExternalEtaSignal
     ? {
       tone: 'forecast',
       text: hasProjectedDelay
-        ? `預計延遲 ${Math.round(projectedDelayMinutes)} 分`
+        ? `${task.etaIsMinimum ? '預計至少延遲' : '預計延遲'} ${Math.round(projectedDelayMinutes)} 分`
         : '下一站可能延遲',
       ariaLabel: hasProjectedDelay
-        ? `下一站預計延遲 ${Math.round(projectedDelayMinutes)} 分`
+        ? `下一站${task.etaIsMinimum ? '預計至少延遲' : '預計延遲'} ${Math.round(projectedDelayMinutes)} 分`
         : '下一站可能延遲',
     }
     : null;
@@ -2554,7 +2726,9 @@ function TaskBlock({ task, vehicle, compareMode, visibleHours, isLatestExecutedT
             {hasProjectedDelay ? (
               <>
                 {formatHour(projectedArrival)}
-                <Box component="span" className="eta-delay">（預計延遲 {projectedDelayMinutes} 分）</Box>
+                <Box component="span" className="eta-delay">
+                  （{task.etaIsMinimum ? '預計至少延遲' : '預計延遲'} {projectedDelayMinutes} 分）
+                </Box>
               </>
             ) : (
               <Box component="span" className="eta-delay">可能延遲</Box>
@@ -2578,6 +2752,12 @@ function TaskBlock({ task, vehicle, compareMode, visibleHours, isLatestExecutedT
               {hasDeparted ? `${formatHour(task.start)}–${formatHour(task.end)}` : `${formatHour(task.start)}–進行中`}
             </Typography>
           </Box>
+          {showCurrentOverdueDepartureWarning && (
+            <Box className="station-tooltip-row overdue-not-arrived-row">
+              <Typography component="span">目前狀況</Typography>
+              <Typography component="b">已超過規劃離站</Typography>
+            </Box>
+          )}
           {showTimeDifference && (
             <Box className="station-tooltip-row time-difference-row">
               <Typography component="b" className="station-difference-summary">
@@ -2611,7 +2791,7 @@ function TaskBlock({ task, vehicle, compareMode, visibleHours, isLatestExecutedT
     <>
       <Tooltip arrow placement="bottom" title={tooltipContent} slotProps={tooltipSlotProps}>
         <Box
-          className={`timeline-task planned-task ${hasEtaWarning ? 'has-eta-warning' : ''} ${showOverdueNotArrivedWarning ? 'overdue-not-arrived' : ''} ${highlighted ? 'paired-highlight' : ''}`}
+          className={`timeline-task planned-task ${hasEtaWarningStyle ? 'has-eta-warning' : ''} ${showOverdueNotArrivedWarning ? 'overdue-not-arrived' : ''} ${highlighted ? 'paired-highlight' : ''}`}
           sx={{ left: `${plannedLeft}%`, width: `${plannedWidth}%`, '--task-status-color': meta.color }}
           onMouseEnter={() => onHighlight(task.id)}
           onMouseLeave={() => onHighlight(null)}
@@ -2825,6 +3005,16 @@ function Timeline({ vehicles, candidates, selectedTask, selectedDriverName, acti
       </Box>
       {vehicles.map((vehicle) => {
         const operationInsight = getVehicleOperationInsight(vehicle);
+        const currentEtaTask = getVehicleCurrentEtaTask(vehicle);
+        const currentOnsiteTask = [...vehicle.tasks]
+          .sort((taskA, taskB) => getTaskPlannedRange(taskB).start - getTaskPlannedRange(taskA).start)
+          .find((task) => (
+            !task.overdueNotArrived
+            && task.state !== 'ready'
+            && task.state !== 'offline'
+            && task.start <= NOW_HOUR
+            && task.end > NOW_HOUR
+          )) ?? null;
         const candidate = candidates.find((item) => item.vehicleId === vehicle.id);
         const inserted = insertedTasks.filter((item) => item.vehicleId === vehicle.id);
         const assignmentScopeTrip = selectedTask?.assignmentMode === 'reassign-driver'
@@ -2885,11 +3075,16 @@ function Timeline({ vehicles, candidates, selectedTask, selectedDriverName, acti
                 && operationInsight?.phase === 'moving'
                 && operationInsight.movingFromTask
                 && operationInsight.movingToTask && (
-                <Tooltip title="移動中" arrow>
+                              <Tooltip title="移動中・點擊查看定位" arrow>
                   <Box
+                    component="button"
+                    type="button"
                     className="timeline-moving-indicator"
-                    role="img"
-                    aria-label="車輛移動中，前往下一站"
+                    aria-label={`${vehicle.id} 移動中，查看地圖定位`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onLocateVehicle(vehicle);
+                    }}
                     sx={{
                       left: `${toPercent(getMovingIndicatorHour(
                         operationInsight.movingFromTask,
@@ -2921,6 +3116,12 @@ function Timeline({ vehicles, candidates, selectedTask, selectedDriverName, acti
                     compareMode={compareMode}
                     visibleHours={visibleHours}
                     isLatestExecutedTask={task.id === latestExecutedTaskId}
+                    showExternalTimeDifference={Boolean(
+                      operationInsight?.phase !== 'moving'
+                      && currentOnsiteTask?.id === task.id
+                    )}
+                    showEtaSignal={currentEtaTask?.id === task.id}
+                    hideExternalEtaSignal={Boolean(vehicle.hideExternalEtaSignal)}
                     hideExternalDepartureDifference={Boolean(
                       operationInsight?.phase === 'moving'
                       && operationInsight.movingFromTask?.id === task.id
@@ -4037,10 +4238,11 @@ export default function App() {
         .map((item) => item.vehicleId),
     );
 
-    return matchedVehicles
+    const sortedVehicles = matchedVehicles
       .map((vehicle, originalIndex) => ({ vehicle, originalIndex }))
       .sort((itemA, itemB) => (
         getVehicleAttentionPriority(itemA.vehicle) - getVehicleAttentionPriority(itemB.vehicle)
+        || getVehicleEtaAvailabilityOrder(itemA.vehicle) - getVehicleEtaAvailabilityOrder(itemB.vehicle)
         || getVehicleAttentionDelayMinutes(itemB.vehicle) - getVehicleAttentionDelayMinutes(itemA.vehicle)
         || getVehicleOverviewOrder(
           itemA.vehicle,
@@ -4052,8 +4254,23 @@ export default function App() {
         || getVehicleTimelineGroupOrder(itemA.vehicle) - getVehicleTimelineGroupOrder(itemB.vehicle)
         || getVehicleExceptionPriority(itemA.vehicle) - getVehicleExceptionPriority(itemB.vehicle)
         || itemA.originalIndex - itemB.originalIndex
-      ))
-      .map(({ vehicle }) => vehicle);
+      ));
+
+    if (overviewFilter === 'abnormal') {
+      const pinnedItemIndex = sortedVehicles.findIndex(({ vehicle }) => (
+        Number.isInteger(vehicle.abnormalSortIndex)
+      ));
+      if (pinnedItemIndex >= 0) {
+        const [pinnedItem] = sortedVehicles.splice(pinnedItemIndex, 1);
+        sortedVehicles.splice(
+          Math.min(pinnedItem.vehicle.abnormalSortIndex, sortedVehicles.length),
+          0,
+          pinnedItem,
+        );
+      }
+    }
+
+    return sortedVehicles.map(({ vehicle }) => vehicle);
   }, [overviewFilter, insertedTasks]);
   const timelineVehicles = useMemo(() => filteredVehicles.map((vehicle) => ({
     ...vehicle,
