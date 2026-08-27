@@ -180,8 +180,10 @@ body { background: #f4f7fa; }
 .timeline-shell.compare-mode .timeline-task.planned-task.overdue-not-arrived .MuiTypography-root { font-weight: 500; }
 .timeline-task-signal { position: absolute; z-index: 8; top: 59px; min-width: max-content; padding: 1px 3px; display: flex; align-items: center; gap: 3px; border-radius: 3px; background: rgba(255,255,255,.92); font-size: 11px; font-weight: 650; line-height: 1.2; white-space: nowrap; pointer-events: none; }
 .timeline-shell.compare-mode .timeline-task-signal.forecast { top: 46px; }
+.timeline-shell.compare-mode .timeline-task-signal.current-issue { top: 60px; }
 .timeline-task-signal svg { width: 11px; height: 11px; flex: 0 0 11px; }
 .timeline-task-signal.forecast { color: #b6610c; font-weight: 650; }
+.timeline-task-signal.current-issue { color: #b73544; }
 .timeline-shell.compare-mode .timeline-task.comparison-current { top: 49px; z-index: 5; box-sizing: border-box; height: 8px; min-width: 0; padding: 0; overflow: visible; border-radius: 4px; box-shadow: none; }
 .timeline-shell.compare-mode .timeline-task.comparison-current.historical-actual-status { border-width: 1px; }
 .timeline-shell.compare-mode .timeline-task.comparison-current::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 18px; transform: translateY(-50%); background: transparent; }

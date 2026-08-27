@@ -161,7 +161,7 @@ const baseVehicles = [
     load: 85,
     tasks: [
       { id: 'TC5-1', label: 'TC5-1 牛奶便', station: '建上本社', address: '台中市南屯區工業區二十六路9號', start: 0.95, end: 2.2, state: 'delayed', arrivalVarianceMinutes: 11, departureVarianceMinutes: 18 },
-      { id: 'TC5-2', label: 'TC5-2 交班配送', station: '建上物流中心', address: '台中市西屯區工業區十二路12號', start: 13.8, end: 19.3, state: 'delayed', delay: 60 },
+      { id: 'TC5-2', label: 'TC5-2 交班配送', station: '建上物流中心', address: '台中市西屯區工業區十二路12號', start: 13.8, end: 19.3, state: 'delayed', delay: 60, outerMessageMode: 'current-only' },
     ],
   },
   {
@@ -2058,6 +2058,102 @@ const getVehicleEtaAvailabilityOrder = (vehicle) => (
 const getVehicleAttentionDelayMinutes = (vehicle) => (
   getVehicleOperationInsight(vehicle)?.delayMinutes ?? 0
 );
+const getVehicleOuterSignals = (vehicle) => {
+  const orderedTasks = [...vehicle.tasks].sort((taskA, taskB) => (
+    getTaskPlannedRange(taskA).start - getTaskPlannedRange(taskB).start
+  ));
+  const activeTask = [...orderedTasks]
+    .filter((task) => (
+      !task.scenarioOnly
+      && !task.overdueNotArrived
+      && task.state !== 'ready'
+      && !taskHasConfirmedDeparture(task)
+      && task.start <= NOW_HOUR
+      && task.end > NOW_HOUR
+    ))
+    .sort((taskA, taskB) => taskB.start - taskA.start)[0] ?? null;
+
+  let currentIssue = null;
+  if (activeTask) {
+    const planned = getTaskPlannedRange(activeTask);
+    const confirmedDelayMinutes = getTaskConfirmedDelayMinutes(activeTask);
+    if (planned.end < NOW_HOUR) {
+      currentIssue = {
+        taskId: activeTask.id,
+        tone: 'current-issue',
+        text: '已超過規劃離站',
+        ariaLabel: `${activeTask.station} 已超過規劃離站`,
+        anchor: 'actual',
+      };
+    } else if (confirmedDelayMinutes > ON_TIME_TOLERANCE_MINUTES) {
+      currentIssue = {
+        taskId: activeTask.id,
+        tone: 'current-issue',
+        text: `延遲 ${Math.round(confirmedDelayMinutes)} 分`,
+        ariaLabel: `${activeTask.station} 延遲 ${Math.round(confirmedDelayMinutes)} 分`,
+        anchor: 'actual',
+      };
+    }
+  }
+
+  if (!currentIssue) {
+    const overdueTask = orderedTasks.find((task) => (
+      task.overdueNotArrived
+      && !task.scenarioOnly
+      && getTaskPlannedRange(task).start < NOW_HOUR
+    ));
+    if (overdueTask) {
+      const planned = getTaskPlannedRange(overdueTask);
+      const text = planned.end < NOW_HOUR
+        ? '已超過規劃離站仍未抵達'
+        : '已超過規劃抵達仍未抵達';
+      currentIssue = {
+        taskId: overdueTask.id,
+        tone: 'current-issue',
+        text,
+        ariaLabel: `${overdueTask.station} ${text}`,
+        anchor: 'planned',
+      };
+    }
+  }
+
+  const suppressForecast = activeTask?.outerMessageMode === 'current-only'
+    || vehicle.hideExternalEtaSignal;
+  const forecastTask = suppressForecast
+    ? null
+    : orderedTasks
+      .filter((task) => (
+        task.id !== currentIssue?.taskId
+        && taskHasSupportedEtaRisk(vehicle, task)
+        && Number(getTaskProjectedDelayMinutes(vehicle, task)) > ON_TIME_TOLERANCE_MINUTES
+        && (task.overdueNotArrived || task.state === 'ready' || getTaskPlannedRange(task).end > NOW_HOUR)
+      ))
+      .sort((taskA, taskB) => getTaskPlannedRange(taskA).start - getTaskPlannedRange(taskB).start)[0] ?? null;
+  const operationInsight = getVehicleOperationInsight(vehicle);
+  const forecastPrefix = operationInsight?.phase === 'moving'
+    ? '預計延遲'
+    : activeTask
+      ? '預計至少延遲'
+      : '預計延遲';
+  const projectedDelayMinutes = forecastTask
+    ? getTaskProjectedDelayMinutes(vehicle, forecastTask)
+    : null;
+  const forecast = forecastTask
+    ? {
+      taskId: forecastTask.id,
+      tone: 'forecast',
+      text: Number.isFinite(projectedDelayMinutes)
+        ? `${forecastPrefix} ${Math.round(projectedDelayMinutes)} 分`
+        : '可能延遲',
+      ariaLabel: Number.isFinite(projectedDelayMinutes)
+        ? `${forecastTask.station}${forecastPrefix} ${Math.round(projectedDelayMinutes)} 分`
+        : `${forecastTask.station}可能延遲`,
+      anchor: 'planned',
+    }
+    : null;
+
+  return { currentIssue, forecast };
+};
 const getMovingIndicatorHour = (fromTask, toTask) => {
   const gapStart = Number.isFinite(fromTask?.end)
     ? fromTask.end
@@ -2543,7 +2639,7 @@ function VehicleMapPin({ vehicle, focused, emphasized, onOpen }) {
   );
 }
 
-function TaskBlock({ task, vehicle, compareMode, visibleHours, isLatestExecutedTask = false, showExternalTimeDifference = false, showEtaSignal = false, hideExternalEtaSignal = false, hideExternalDepartureDifference = false, highlighted, onHighlight, onLocate, onReassign }) {
+function TaskBlock({ task, vehicle, compareMode, visibleHours, isLatestExecutedTask = false, showExternalTimeDifference = false, showEtaSignal = false, hideExternalEtaSignal = false, hideExternalDepartureDifference = false, outerSignal = null, suppressDefaultSignal = false, hideExternalTimeDifference = false, highlighted, onHighlight, onLocate, onReassign }) {
   const meta = statusMeta[task.state] || statusMeta.running;
   const planned = getTaskPlannedRange(task);
   const plannedLeft = toPercent(planned.start);
@@ -2631,10 +2727,12 @@ function TaskBlock({ task, vehicle, compareMode, visibleHours, isLatestExecutedT
   const showArrivalDifference = showArrivalDifferenceEndpoint
     && showTaskDifference
     && showExternalTimeDifference
+    && !hideExternalTimeDifference
     && (!compactDifferenceDisplay || !hasDeparted);
   const showDepartureDifference = showDepartureDifferenceEndpoint
     && showTaskDifference
     && showExternalTimeDifference
+    && !hideExternalTimeDifference
     && !hideExternalDepartureDifference;
   const showTimeDifference = arrivalDifferenceState !== 'ontime'
     || (hasDeparted && departureDifferenceState !== 'ontime');
@@ -2647,7 +2745,7 @@ function TaskBlock({ task, vehicle, compareMode, visibleHours, isLatestExecutedT
   const projectedArrival = hasProjectedDelay
     ? planned.start + (projectedDelayMinutes / 60)
     : null;
-  const timelineSignal = hasEtaWarning && !hideExternalEtaSignal
+  const defaultTimelineSignal = hasEtaWarning && !hideExternalEtaSignal
     ? {
       tone: 'forecast',
       text: hasProjectedDelay
@@ -2658,6 +2756,7 @@ function TaskBlock({ task, vehicle, compareMode, visibleHours, isLatestExecutedT
         : '下一站可能延遲',
     }
     : null;
+  const timelineSignal = outerSignal ?? (suppressDefaultSignal ? null : defaultTimelineSignal);
   const actualRight = toPercent(actualLineEnd);
   const taskTrip = getTaskTrip(task, vehicle);
   const tripTasks = vehicle.tasks.filter((item) => String(getTaskTrip(item, vehicle)) === String(taskTrip));
@@ -2807,7 +2906,7 @@ function TaskBlock({ task, vehicle, compareMode, visibleHours, isLatestExecutedT
           className={`timeline-task-signal ${timelineSignal.tone}`}
           role="status"
           aria-label={timelineSignal.ariaLabel}
-          sx={{ left: `${plannedLeft}%` }}
+          sx={{ left: `${timelineSignal.anchor === 'actual' ? actualLeft : plannedLeft}%` }}
         >
           <span>{timelineSignal.text}</span>
         </Box>
@@ -3006,6 +3105,8 @@ function Timeline({ vehicles, candidates, selectedTask, selectedDriverName, acti
       {vehicles.map((vehicle) => {
         const operationInsight = getVehicleOperationInsight(vehicle);
         const currentEtaTask = getVehicleCurrentEtaTask(vehicle);
+        const outerSignals = getVehicleOuterSignals(vehicle);
+        const hasOuterSignal = Boolean(outerSignals.currentIssue || outerSignals.forecast);
         const currentOnsiteTask = [...vehicle.tasks]
           .sort((taskA, taskB) => getTaskPlannedRange(taskB).start - getTaskPlannedRange(taskA).start)
           .find((task) => (
@@ -3108,6 +3209,11 @@ function Timeline({ vehicles, candidates, selectedTask, selectedDriverName, acti
               )}
               {vehicle.tasks.map((task) => {
                 const isAssignmentScopeTask = assignmentScopeTrip === String(getTaskTrip(task, vehicle));
+                const outerSignal = outerSignals.currentIssue?.taskId === task.id
+                  ? outerSignals.currentIssue
+                  : outerSignals.forecast?.taskId === task.id
+                    ? outerSignals.forecast
+                    : null;
                 return (
                   <TaskBlock
                     key={task.id}
@@ -3122,6 +3228,9 @@ function Timeline({ vehicles, candidates, selectedTask, selectedDriverName, acti
                     )}
                     showEtaSignal={currentEtaTask?.id === task.id}
                     hideExternalEtaSignal={Boolean(vehicle.hideExternalEtaSignal)}
+                    outerSignal={outerSignal}
+                    suppressDefaultSignal={hasOuterSignal}
+                    hideExternalTimeDifference={hasOuterSignal}
                     hideExternalDepartureDifference={Boolean(
                       operationInsight?.phase === 'moving'
                       && operationInsight.movingFromTask?.id === task.id
