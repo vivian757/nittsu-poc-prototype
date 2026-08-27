@@ -148,6 +148,10 @@ body { background: #f4f7fa; }
 .hour-gridline { position: absolute; z-index: 1; inset: 0 auto 0; border-left: 1px dashed #e4e9ef; }
 .requested-window-band { position: absolute; z-index: 0; inset: 0 auto; min-width: 38px; background: rgba(64,139,214,.05); pointer-events: none; }
 .now-line { position: absolute; z-index: 7; inset: 0 auto 0; border-left: 2px solid #123d88; pointer-events: none; }
+.timeline-moving-indicator { position: absolute; z-index: 10; top: 42px; width: 32px; height: 32px; transform: translateX(-50%); display: grid; place-items: center; color: inherit; background: transparent; pointer-events: auto; }
+.timeline-moving-indicator .vehicle-icon-artwork { width: 31px; height: 27px; }
+.vehicle-icon-artwork { width: 34px; height: 30px; display: inline-grid; place-items: center; filter: drop-shadow(0 2px 2px rgba(32,45,59,.2)); }
+.vehicle-icon-artwork svg { width: 100%; height: 100%; display: block; overflow: visible; }
 .reassignment-preview-label { position: absolute; z-index: 12; top: 2px; max-width: 120px; padding: 1px 4px; border-radius: 3px; color: #2f73c8; background: #f8fafc; font-size: 10px; font-weight: 700; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
 .timeline-task { position: absolute; z-index: 4; top: 25px; height: 30px; min-width: 50px; padding: 0 8px; border: 1px solid; border-radius: 6px; display: flex; align-items: center; justify-content: space-between; gap: 6px; overflow: hidden; white-space: nowrap; font-size: 10px; font-weight: 700; box-shadow: 0 1px 2px rgba(22,34,52,.05); }
 .timeline-shell.hours-18 .timeline-task { min-width: 38px; padding-right: 6px; padding-left: 6px; }
@@ -171,6 +175,10 @@ body { background: #f4f7fa; }
 .timeline-shell.compare-mode .timeline-task.planned-task .MuiTypography-root { font-size: 14px; font-weight: 400; }
 .timeline-shell.compare-mode .timeline-task.planned-task.has-eta-warning .MuiTypography-root,
 .timeline-shell.compare-mode .timeline-task.planned-task.overdue-not-arrived .MuiTypography-root { font-weight: 500; }
+.timeline-task-signal { position: absolute; z-index: 8; top: 59px; min-width: max-content; padding: 1px 3px; display: flex; align-items: center; gap: 3px; border-radius: 3px; background: rgba(255,255,255,.92); font-size: 10px; font-weight: 650; line-height: 1.2; white-space: nowrap; pointer-events: none; }
+.timeline-shell.compare-mode .timeline-task-signal.forecast { top: 51px; }
+.timeline-task-signal svg { width: 11px; height: 11px; flex: 0 0 11px; }
+.timeline-task-signal.forecast { color: #b6610c; }
 .timeline-shell.compare-mode .timeline-task.comparison-current { top: 54px; z-index: 5; box-sizing: border-box; height: 8px; min-width: 0; padding: 0; overflow: visible; border-radius: 4px; box-shadow: none; }
 .timeline-shell.compare-mode .timeline-task.comparison-current.historical-actual-status { border-width: 1px; }
 .timeline-shell.compare-mode .timeline-task.comparison-current::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 18px; transform: translateY(-50%); background: transparent; }
@@ -537,13 +545,11 @@ body.map-resizing * { cursor: ns-resize !important; }
 .task-location-tooltip.leaflet-tooltip-top::before { border-top-color: #fff; }
 .distance-line-label-root { border: 0; background: transparent; pointer-events: none; }
 .distance-line-label { width: 112px; height: 24px; display: inline-flex; align-items: center; justify-content: center; color: #315a87; border: 1px solid #c8d7e7; border-radius: 999px; background: rgba(255,255,255,.96); box-shadow: 0 3px 10px rgba(32,54,82,.1); font-size: 11px; font-weight: 700; white-space: nowrap; }
-.leaflet-vehicle-pin { position: relative; width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,.7); border-radius: 50%; color: #fff; background: #536272; box-shadow: 0 5px 14px rgba(44,57,72,.22); cursor: pointer; transition: transform .18s cubic-bezier(.22,1,.36,1), background-color .18s cubic-bezier(.22,1,.36,1), border-color .18s cubic-bezier(.22,1,.36,1), box-shadow .18s cubic-bezier(.22,1,.36,1); }
-.vehicle-marker-root:hover .leaflet-vehicle-pin:not(.focused) { border-color: rgba(255,255,255,.9); background: #456783; box-shadow: 0 0 0 3px rgba(47,115,200,.2), 0 7px 18px rgba(31,78,135,.28); transform: translateY(-2px) scale(1.05); }
-.leaflet-vehicle-pin.emphasized { box-shadow: 0 0 0 4px rgba(47,115,200,.18), 0 6px 16px rgba(44,57,72,.24); }
-.leaflet-vehicle-pin.focused { border-color: rgba(255,255,255,.92); background: #2f73c8; box-shadow: 0 0 0 4px rgba(47,115,200,.28), 0 7px 18px rgba(31,78,135,.3); }
-.map-truck-glyph { position: relative; width: 14px; height: 9px; flex: 0 0 14px; border: 1.5px solid currentColor; border-radius: 1px; }
-.map-truck-glyph::before { content: ''; position: absolute; right: -4px; bottom: -1.5px; width: 4px; height: 6px; border: 1.5px solid currentColor; border-left: 0; border-radius: 0 2px 1px 0; }
-.map-truck-glyph::after { content: ''; position: absolute; left: 1px; bottom: -4px; width: 3px; height: 3px; border-radius: 50%; background: currentColor; box-shadow: 8px 0 0 currentColor; }
+.flat-vehicle-map-pin { position: relative; width: 42px; height: 38px; display: inline-grid; place-items: center; cursor: pointer; transition: transform .18s cubic-bezier(.22,1,.36,1), filter .18s cubic-bezier(.22,1,.36,1); }
+.flat-vehicle-map-pin .vehicle-icon-artwork { width: 38px; height: 33px; filter: drop-shadow(0 1px 0 rgba(248,250,252,.95)) drop-shadow(0 3px 3px rgba(32,45,59,.3)); }
+.vehicle-marker-root:hover .flat-vehicle-map-pin:not(.focused) { transform: translateY(-2px) scale(1.05); filter: drop-shadow(0 0 3px rgba(47,115,200,.35)); }
+.flat-vehicle-map-pin.emphasized { filter: drop-shadow(0 0 4px rgba(47,115,200,.4)); }
+.flat-vehicle-map-pin.focused { filter: drop-shadow(0 0 5px rgba(47,115,200,.62)); }
 .map-pin-status { position: absolute; right: -8px; top: -9px; width: 20px; height: 20px; display: grid; place-items: center; border: 1px solid #dfe5ec; border-radius: 50%; background: #fff; box-shadow: 0 2px 7px rgba(31,43,58,.18); }
 .map-pin-status svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .map-pin-status.risk { color: #fff; border-color: #b73544; background: #b73544; }
