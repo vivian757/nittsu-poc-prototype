@@ -19,3 +19,9 @@ npm run dev
 5. 點擊車輛列可查看車輛與當日任務詳情。
 
 第一版使用情境資料，不包含他項任務 Key-in、正式資料寫入、司機通知或完整派車歷程。
+
+## 設計規範
+
+- [`PRODUCT.md`](./Guideline/PRODUCT.md)：產品目的、使用者與設計原則。
+- [`DESIGN.md`](./Guideline/DESIGN.md)：視覺基礎、Design Token 與元件基準。
+- [`UI_PATTERN.md`](./Guideline/UI_PATTERN.md)：頁面級元件契約、互動 Pattern、狀態與組合規則。

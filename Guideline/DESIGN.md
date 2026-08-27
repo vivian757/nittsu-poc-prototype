@@ -100,3 +100,16 @@ tokens:
 - 不讓 Hover、拖曳或顏色成為完成任務的唯一方式。
 - 不將搜尋、編輯與詳細欄位永久攤開在主畫面。
 - 不用模糊的「AI 推薦」取代可驗證的時間、資源與衝突依據。
+
+## 7. Pattern Source of Truth
+
+本文件定義視覺基礎與 Design Token。頁面級元件契約、互動流程、狀態矩陣與組合方式，統一記錄於 [`UI_PATTERN.md`](./UI_PATTERN.md)。
+
+新增或調整頁面時，依序遵循：
+
+1. `src/theme.js` 的 Theme Token 與 MUI override。
+2. 本文件的視覺與元件基礎規範。
+3. `UI_PATTERN.md` 的共用 Interaction Pattern。
+4. 頁面內的特定業務組合。
+
+當同一 Pattern 在第二個頁面出現時，應抽到 `src/components/`，透過單一 `src/components/index.js` 對外輸出，不以複製 JSX 與 CSS 的方式延伸。
