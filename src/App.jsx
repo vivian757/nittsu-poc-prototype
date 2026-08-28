@@ -4523,7 +4523,7 @@ export default function App() {
   const [focusedVehicleId, setFocusedVehicleId] = useState(null);
   const [stationMapFocus, setStationMapFocus] = useState(null);
   const [mapFocusRequest, setMapFocusRequest] = useState(null);
-  const [sidebarExpanded, setSidebarExpanded] = useState(() => window.matchMedia('(min-width: 1180px)').matches);
+  const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [showActualExecution, setShowActualExecution] = useState(true);
   const [timelineVisibleHours, setTimelineVisibleHours] = useState(24);
   const [maximizedView, setMaximizedView] = useState(null);
@@ -4560,10 +4560,12 @@ export default function App() {
 
   useEffect(() => {
     const compactViewport = window.matchMedia('(max-width: 1179px)');
-    const syncSidebarToViewport = (event) => setSidebarExpanded(!event.matches);
-    syncSidebarToViewport(compactViewport);
-    compactViewport.addEventListener('change', syncSidebarToViewport);
-    return () => compactViewport.removeEventListener('change', syncSidebarToViewport);
+    const collapseSidebarOnCompactViewport = (event) => {
+      if (event.matches) setSidebarExpanded(false);
+    };
+    collapseSidebarOnCompactViewport(compactViewport);
+    compactViewport.addEventListener('change', collapseSidebarOnCompactViewport);
+    return () => compactViewport.removeEventListener('change', collapseSidebarOnCompactViewport);
   }, []);
 
   useEffect(() => {
