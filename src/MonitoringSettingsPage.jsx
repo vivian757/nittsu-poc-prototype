@@ -16,19 +16,22 @@ import {
 import {
   AccessTimeRounded,
   CheckCircleOutlineRounded,
-  ForumOutlined,
   GpsFixedRounded,
   HelpOutlineRounded,
   InfoOutlined,
   LoginRounded,
+  LocalShippingRounded,
   LogoutRounded,
   CloseRounded,
   StickyNote2Outlined,
   PlaceOutlined,
   ScheduleRounded,
   SensorsRounded,
+  PlaylistAddRounded,
   TimelineRounded,
   TuneRounded,
+  VisibilityOutlined,
+  WarehouseRounded,
   WarningAmberRounded,
 } from '@mui/icons-material';
 
@@ -57,10 +60,10 @@ export const DEFAULT_MONITORING_SETTINGS = {
   detectionInterval: '5',
   geofenceRadius: '300',
   enterStableMinutes: '2',
-  earlyArrivalTolerance: '10',
-  earlyDepartureTolerance: '10',
-  lateArrivalTolerance: '10',
-  lateDepartureTolerance: '10',
+  earlyArrivalTolerance: '5',
+  earlyDepartureTolerance: '5',
+  lateArrivalTolerance: '5',
+  lateDepartureTolerance: '5',
   taskConnectionGapMinutes: '30',
 };
 
@@ -200,14 +203,6 @@ const timelineScenarios = [
     nowPosition: 53,
   },
   {
-    id: 'not-arrived-after-departure',
-    title: '已經超過規劃離站時間，尚未抵達',
-    note: '已超過完整規劃作業時段，但尚未形成抵達事件；只標示狀態，不顯示確定的延遲分鐘數。',
-    result: '已延遲・尚未抵達',
-    resultTone: 'delayed',
-    nowPosition: 76,
-  },
-  {
     id: 'not-departed',
     title: '已抵達，超過規劃離站時間仍未離站',
     note: '已發生抵達事件；離站延遲持續累計，但尚無確定離站時間。',
@@ -223,10 +218,13 @@ const timelineScenarios = [
 
 const formedEventScenarioIds = [
   'ontime-both',
-  'ontime-arrival-delayed-departure',
-  'delayed-arrival-ontime-departure',
+  'early-both',
+  'early-arrival',
   'early-arrival-delayed-departure',
+  'ontime-arrival-early-departure',
+  'ontime-arrival-delayed-departure',
   'delayed-arrival-early-departure',
+  'delayed-arrival-ontime-departure',
   'delayed-both',
 ];
 
@@ -234,8 +232,46 @@ const formedEventScenarios = formedEventScenarioIds.map(
   (id) => timelineScenarios.find((scenario) => scenario.id === id),
 );
 const pendingEventScenarios = timelineScenarios.filter(
-  ({ id }) => ['not-arrived', 'not-arrived-after-departure', 'not-departed'].includes(id),
+  ({ id }) => ['not-arrived', 'not-departed'].includes(id),
 );
+
+const outerImpactPhases = [
+  {
+    id: 'before-arrival',
+    title: '抵達前・移動中',
+    icon: LocalShippingRounded,
+    event: '尚未抵達',
+    signals: [
+      { tone: 'forecast', text: '預計抵達延遲 N 分' },
+    ],
+    note: '超過延遲判斷門檻時，顯示 ETA',
+  },
+  {
+    id: 'on-site',
+    title: '到站作業中',
+    icon: WarehouseRounded,
+    transition: '實際抵達',
+    event: '已抵達，尚未離站',
+    signals: [
+      { tone: 'early', text: '抵達提早 N 分' },
+      { tone: 'confirmed', text: '抵達延遲 N 分' },
+      { tone: 'confirmed', text: '滯留中(作業延遲)' },
+    ],
+    note: '準時則不顯示',
+  },
+  {
+    id: 'departed',
+    title: '離站後・移動中',
+    icon: LocalShippingRounded,
+    transition: '實際離站',
+    event: '已離站',
+    signals: [
+      { tone: 'early', text: '離站提早 N 分' },
+      { tone: 'confirmed', text: '離站延遲 N 分' },
+    ],
+    note: '離站後，要重新計算下一站 ETA',
+  },
+];
 
 function TimelineScenario({ scenario, note, onNoteChange }) {
   return (
@@ -246,8 +282,9 @@ function TimelineScenario({ scenario, note, onNoteChange }) {
 
       <Box className="geofence-timeline" aria-label={`${scenario.title}：${scenario.result}`}>
         <Box className="geofence-timeline-axis" />
-        <Box className="geofence-tolerance-band arrival" />
-        <Box className="geofence-tolerance-band departure" />
+        <Box className="geofence-planned-dwell"><span>規劃站內作業</span></Box>
+        <Box className="geofence-tolerance-band arrival"><span>抵達容許緩衝範圍</span></Box>
+        <Box className="geofence-tolerance-band departure"><span>離站容許緩衝範圍</span></Box>
         <Box className="geofence-plan-marker arrival"><span /> <b>規劃抵達 09:00</b></Box>
         <Box className="geofence-plan-marker departure"><span /> <b>規劃離站 10:00</b></Box>
 
@@ -317,19 +354,6 @@ function LogicClarificationView() {
 
   return (
     <Box className="monitoring-settings-view">
-      <Paper variant="outlined" className="clarification-panel questions clarification-panel-top">
-        <Stack direction="row" alignItems="center" spacing={1}>
-          <ForumOutlined />
-          <Typography variant="h6">待釐清</Typography>
-        </Stack>
-        <ul>
-          <li>進入電子圍籬的判斷是否需緩衝時間？避免 GPS 漂移或短暫進出。</li>
-          <li>抵達與離站是否皆需要容許時間？</li>
-          <li>哪些情境要判定為異常，並提供預警？</li>
-          <li>哪些必要的預警是單靠電子圍籬無法完整支援，可能需要結合動態路況（如 Google）的？</li>
-        </ul>
-      </Paper>
-
       <Typography variant="h6" className="geofence-logic-heading">電子圍籬核心機制</Typography>
       <Box className="geofence-logic-summary">
         <Box className="logic-summary-item">
@@ -353,8 +377,9 @@ function LogicClarificationView() {
           <Typography variant="h6">情境時間線</Typography>
         </Box>
         <Box className="geofence-legend">
-          <span className="planned">規劃時間</span>
-          <span className="tolerance">容許時間範圍</span>
+          <span className="planned">規劃站內作業區間</span>
+          <span className="tolerance">抵達／離站容許緩衝範圍</span>
+          <span className="actual">實際站內作業區間</span>
         </Box>
       </Box>
 
@@ -399,6 +424,109 @@ function LogicClarificationView() {
         </Box>
       </Box>
 
+    </Box>
+  );
+}
+
+function OuterOperationalImpactView() {
+  return (
+    <Box className="monitoring-settings-view outer-impact-view">
+      <Box className="outer-impact-heading">
+        <Box>
+          <Typography variant="h6">時間軸預警機制</Typography>
+          <Typography>根據車輛作業階段，提示用戶當下最需要關注的營運異常，提供可能影響調度下一步決策的訊息。</Typography>
+        </Box>
+      </Box>
+
+      <Box className="outer-impact-overview-layout">
+          <Box className="outer-impact-stage-matrix" aria-label="站點作業階段、電子圍籬事件與營運提示">
+            <Typography className="outer-impact-matrix-row-label station-label">站點</Typography>
+            <Box className="outer-impact-current-station-band">
+              <Typography>目前站點</Typography>
+            </Box>
+
+            <Typography className="outer-impact-matrix-row-label phase-label">作業階段</Typography>
+            {outerImpactPhases.map((phase) => {
+              const PhaseIcon = phase.icon;
+              return (
+                <Box className={`outer-impact-matrix-phase ${phase.id}`} key={phase.id}>
+                  <PhaseIcon aria-hidden="true" />
+                  <Typography>{phase.title}</Typography>
+                </Box>
+              );
+            })}
+
+            <Typography className="outer-impact-matrix-row-label event-label">電子圍籬事件</Typography>
+            {outerImpactPhases.map((phase) => (
+              <Box className={`outer-impact-matrix-event ${phase.id}`} key={`${phase.id}-event`}>
+                {phase.transition && (
+                  <span className="outer-impact-event-transition" aria-label={phase.transition}>
+                    {phase.transition}
+                  </span>
+                )}
+                <Typography>{phase.event}</Typography>
+              </Box>
+            ))}
+
+            <Typography className="outer-impact-matrix-row-label emphasis">營運提示</Typography>
+            {outerImpactPhases.map((phase) => (
+              <Box className="outer-impact-matrix-signals" key={`${phase.id}-signals`}>
+                {phase.signals.map((signal) => (
+                  <Box className={`outer-impact-signal ${signal.tone}`} key={signal.text}>
+                    <i aria-hidden="true" />
+                    <Typography>{signal.text}</Typography>
+                  </Box>
+                ))}
+                <Typography className="outer-impact-matrix-note">{phase.note}</Typography>
+              </Box>
+            ))}
+          </Box>
+
+          <Box className="outer-impact-next-panel" aria-label="下一站影響">
+            <Box className="outer-impact-next-panel-heading">
+              <Typography>下一站影響</Typography>
+            </Box>
+            <Box className="outer-impact-next-panel-body">
+              <Box className="outer-impact-signal forecast next-stop">
+                <i aria-hidden="true" />
+                <Typography>預計延遲 N 分抵達</Typography>
+              </Box>
+              <Box className="outer-impact-next-calculations">
+                <Box className="outer-impact-next-calculation">
+                  <Typography className="outer-impact-next-calculation-title">上一站延遲抵達</Typography>
+                  <Box component="ul">
+                    <Typography component="li">實際抵達時間＋規劃執行時間＋Google 導航行駛時間</Typography>
+                  </Box>
+                </Box>
+                <Box className="outer-impact-next-calculation">
+                  <Typography className="outer-impact-next-calculation-title">上一站滯留中（作業延遲）</Typography>
+                  <Box component="ul">
+                    <Typography component="li">現在出發推估：現在時間＋Google 導航行駛時間</Typography>
+                  </Box>
+                </Box>
+                <Box className="outer-impact-next-calculation">
+                  <Typography className="outer-impact-next-calculation-title">上一站實際離站（重新計算 ETA）</Typography>
+                  <Box component="ul">
+                    <Typography component="li">實際離站時間＋Google 導航行駛時間</Typography>
+                  </Box>
+                </Box>
+              </Box>
+            </Box>
+          </Box>
+      </Box>
+
+      <Box className="outer-impact-summary">
+        <Box className="outer-impact-summary-copy">
+          <Typography><b>外層資訊顯示原則：</b>依目前作業階段提示最需要處理的營運影響。</Typography>
+          <Typography>其他資訊保留在 Bar＋Hover</Typography>
+        </Box>
+        <Box className="outer-impact-legend" aria-label="外層訊號顏色說明">
+          <span className="outer-impact-legend-title">提示類型</span>
+          <span className="confirmed"><i />已確定延遲</span>
+          <span className="forecast"><i />預估延遲</span>
+          <span className="early"><i />已確定提早</span>
+        </Box>
+      </Box>
     </Box>
   );
 }
@@ -489,7 +617,7 @@ function SettingsMockView({ settings, onChange }) {
 
         <Box className="monitoring-settings-form-section">
           <Stack direction="row" alignItems="center" spacing={1} className="monitoring-settings-form-title">
-            <ScheduleRounded /><Typography variant="h6">時間差容許範圍</Typography>
+            <ScheduleRounded /><Typography variant="h6">提早／延遲判定門檻</Typography>
           </Stack>
           <ToleranceSentenceField
             tone="early"
@@ -531,23 +659,20 @@ function SettingsMockView({ settings, onChange }) {
 
         <Box className="monitoring-settings-form-section">
           <Stack direction="row" alignItems="center" spacing={1} className="monitoring-settings-form-title">
-            <AccessTimeRounded /><Typography variant="h6">空檔候選判斷</Typography>
+            <PlaylistAddRounded /><Typography variant="h6">插單候選空檔</Typography>
           </Stack>
-          <SettingField
-            label="任務銜接最小間隔"
-            helper="插單與前一任務、下一便次皆須保留此間隔；低於此值時仍提供候選並顯示警示，確認插單後顯示銜接時間不足提醒。"
-          >
+          <EventSentenceField>
+            <Typography component="span">插單時，與下一任務間隔至少</Typography>
             <TextField
+              className="monitoring-event-sentence-input"
               size="small"
               type="number"
               value={settings.taskConnectionGapMinutes}
               onChange={setValue('taskConnectionGapMinutes')}
-              slotProps={{
-                htmlInput: { min: 0, step: 5, 'aria-label': '任務銜接最小間隔分鐘數' },
-                input: { endAdornment: <span className="setting-unit">分鐘</span> },
-              }}
+              slotProps={{ htmlInput: { min: 0, step: 5, 'aria-label': '插單任務最小間隔分鐘數' } }}
             />
-          </SettingField>
+            <Typography component="span">分鐘（不足時仍會列為候選，並提供警示）。</Typography>
+          </EventSentenceField>
         </Box>
 
       </Paper>
@@ -648,7 +773,7 @@ export default function MonitoringSettingsPage({
       </Box>
 
       <Alert className="monitoring-settings-note monitoring-settings-page-note" severity="info" icon={<InfoOutlined />}>
-        此頁用於釐清電子圍籬、時間差與空檔候選判斷，數值為討論起點，尚未形成正式系統設定。
+        此頁用於釐清電子圍籬、時間差預警機制與插單空檔候選判斷，數值為討論起點，尚未形成正式系統設定。
       </Alert>
 
       <EtaWarningNotes anchorEl={notesAnchorEl} onClose={() => setNotesAnchorEl(null)} />
@@ -659,16 +784,20 @@ export default function MonitoringSettingsPage({
           onChange={(_, value) => setTab(value)}
           aria-label="監控設定內容切換"
           className="monitoring-settings-tabs"
+          variant="scrollable"
+          scrollButtons="auto"
+          allowScrollButtonsMobile
         >
-          <Tab icon={<TimelineRounded />} iconPosition="start" label="邏輯釐清（非互動展示）" />
           <Tab icon={<TuneRounded />} iconPosition="start" label="設定示意" />
+          <Tab icon={<VisibilityOutlined />} iconPosition="start" label="時間軸預警釐清" />
+          <Tab icon={<TimelineRounded />} iconPosition="start" label="電子圍籬邏輯釐清" />
         </Tabs>
 
-        {tab === 0
-          ? <LogicClarificationView />
-          : <SettingsMockView settings={settings} onChange={onSettingsChange} />}
+        {tab === 0 && <SettingsMockView settings={settings} onChange={onSettingsChange} />}
+        {tab === 1 && <OuterOperationalImpactView />}
+        {tab === 2 && <LogicClarificationView />}
 
-        {tab === 1 && (
+        {tab === 0 && (
           <Box className="monitoring-settings-actions">
             <Button color="inherit" onClick={resetSettings}>重設示意值</Button>
             <Button variant="contained" onClick={() => setSaved(true)}>儲存設定示意</Button>

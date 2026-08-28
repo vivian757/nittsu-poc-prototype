@@ -1,4 +1,12 @@
+import { formatVehiclePlate } from './vehiclePlate';
+
 const value = (label, text, options = {}) => ({ label, kind: 'value', value: text, ...options });
+const bloodPressure = (label, text, options = {}) => ({
+  label,
+  kind: 'bloodPressure',
+  value: text,
+  ...options,
+});
 const check = (label, checked = true, options = {}) => ({
   label,
   kind: 'confirm',
@@ -34,11 +42,11 @@ const plates = [
   'KLA-0930', 'KLA-0923', '127-ZC', '647-ZU', 'KLA-0909', 'KLP-3656',
 ];
 
-const inspectors = [
-  '內部員工 / 王日通',
-  '內部員工 / 李承翰',
-  '內部員工 / 陳怡君',
-  '內部員工 / 林冠宇',
+const CHECKLIST_INSPECTORS = [
+  '王日通',
+  '李承翰',
+  '陳怡君',
+  '林冠宇',
 ];
 const plannedReportTimes = ['05:30', '06:00', '06:12', '06:30', '07:00', '07:30'];
 const arrivalOffsets = [-4, null, 6, null, 8, null, -1, null];
@@ -69,67 +77,67 @@ const buildSections = ({
     readonly: true,
     items: [
       value('路線', route, { readonly: true }),
-      value('車號', plate, { readonly: true }),
+      value('車號', formatVehiclePlate(plate), { readonly: true }),
       value('報到時間', reportTime, { readonly: true }),
-      value('實際報到時間', actualReportTime, { readonly: true }),
+      value('實際報到時間', actualReportTime, { readonly: true, reportAction: true }),
     ],
   },
   {
     title: '作業前點呼',
     phase: 'pre',
     items: [
-      check('安全帽', hasReported, { group: '安全裝備與攜帶文件', groupVariant: 'field-label' }),
-      check('反光背心', hasReported),
-      check('制服', hasReported),
-      check('安全鞋', hasReported),
-      check('護目鏡', hasReported),
+      check('安全帽、反光背心、制服、安全鞋、護目鏡', hasReported, {
+        group: '安全裝備與攜帶文件',
+        groupVariant: 'field-label',
+        wrapLabel: true,
+      }),
       check('身份證', hasReported),
       check('堆高機駕照', hasReported),
       check('貨車駕照', hasReported),
       check('行駛日報表', hasReported),
       check('行車紀錄紙', hasReported),
       check('鑰匙＋I-tag', hasReported),
-      value('睡眠時間', reportedValue(`${7 + (seed % 3)} 小時`)),
-      value('體溫', reportedValue(`${(36.2 + (seed % 5) / 10).toFixed(1)} ℃`)),
-      value('血壓', reportedValue(bloodPressures[seed % bloodPressures.length])),
-      value('酒測值', reportedValue('0.00 mg/L')),
-      value('服藥', reportedValue('無')),
+      value('睡眠時間', reportedValue(`${7 + (seed % 3)}`), { unit: 'H', labelNote: '（8H）' }),
+      value('體溫', reportedValue(`${(36.2 + (seed % 5) / 10).toFixed(1)}`), { unit: '℃', labelNote: '（<35.0℃／>37.5℃）' }),
+      bloodPressure('血壓', reportedValue(bloodPressures[seed % bloodPressures.length]), {
+        unit: 'mmHg',
+        labelNote: '（收縮－舒張；≥160/100／≤90/60）',
+      }),
+      value('酒測值', reportedValue('0.00'), { unit: 'mg/L', labelNote: '（0.00mg/L）' }),
+      value('服藥（慢性病除外）', reportedValue('無'), { labelNote: '（無／8H）' }),
       choice('可否出車', reportedValue('可出車'), ['可出車', '不可出車']),
-      value('不可出車原因／是否通報', reportedValue('-')),
+      value('不可出車原因（已通報）', reportedValue('-')),
       check('行照', hasReported, { group: '文件發放', groupVariant: 'field-label' }),
       check('保險卡', hasReported),
       check('油卡', hasReported),
       check('司機手冊', hasReported),
       check('通行證', hasReported),
       check('DCS', hasReported),
-      value('點檢者', preInspector ?? '', { readonly: true, inspector: true }),
+      value('點檢者', preInspector ?? '', { inspector: true }),
     ],
   },
   {
     title: '作業後點呼',
     phase: 'post',
     items: [
-      check('安全裝備與鑰匙＋I-tag 繳回', hasReported, { group: '繳回品確認', groupVariant: 'field-label' }),
-      check('行照、保險卡、油卡、收據繳回', hasReported),
-      check('行駛日報表繳回', hasReported),
-      check('行車紀錄紙繳回', hasReported),
-      check('司機手冊繳回', hasReported),
-      check('DCS 繳回', hasReported),
-      value('作業後酒測值', reportedValue('0.00 mg/L')),
       value('點呼時間', reportedValue('17:35'), { readonly: true, autoTime: true }),
-      value('點檢者', postInspector ?? '', { readonly: true, inspector: true }),
+      check('安全帽、反光背心、制服、安全鞋、護目鏡', hasReported, {
+        group: '繳回品確認',
+        groupVariant: 'field-label',
+        wrapLabel: true,
+      }),
+      check('鑰匙＋I-tag', hasReported),
+      check('行照、保險卡、油卡、收據', hasReported, { wrapLabel: true }),
+      check('行駛日報表', hasReported),
+      check('行車紀錄紙', hasReported),
+      check('司機手冊', hasReported),
+      check('DCS', hasReported),
+      value('酒測值', reportedValue('0.00'), { unit: 'mg/L', labelNote: '（0.00mg/L）' }),
+      value('點檢者', postInspector ?? '', { inspector: true }),
     ],
   },
   ];
 };
-
-export const updatePhaseInspector = (sections, phase, inspector) => sections.map((section) => {
-  if (section.phase !== phase) return section;
-  return {
-    ...section,
-    items: section.items.map((item) => item.inspector ? { ...item, value: inspector } : item),
-  };
-});
 
 export const updatePhaseTime = (sections, phase, time) => sections.map((section) => {
   if (section.phase !== phase) return section;
@@ -158,8 +166,8 @@ export const INITIAL_CHECKLIST_RECORDS = Array.from({ length: 24 }, (_, index) =
   const hasReported = actualReportTime !== '-';
   const preChecked = hasReported && index % 3 !== 1;
   const postChecked = hasReported && index % 4 === 0;
-  const preInspector = preChecked ? inspectors[index % inspectors.length] : null;
-  const postInspector = postChecked ? inspectors[(index + 1) % inspectors.length] : null;
+  const preInspector = preChecked ? CHECKLIST_INSPECTORS[index % CHECKLIST_INSPECTORS.length] : null;
+  const postInspector = postChecked ? CHECKLIST_INSPECTORS[(index + 1) % CHECKLIST_INSPECTORS.length] : null;
   const route = routes[index % routes.length];
   const plate = plates[index % plates.length];
 

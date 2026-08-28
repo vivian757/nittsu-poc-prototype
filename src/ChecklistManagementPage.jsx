@@ -9,6 +9,8 @@ import {
   Drawer,
   FormControlLabel,
   IconButton,
+  InputAdornment,
+  InputBase,
   MenuItem,
   Paper,
   Radio,
@@ -24,6 +26,7 @@ import {
   ArrowDownwardRounded,
   ArrowUpwardRounded,
   CalendarTodayRounded,
+  CheckRounded,
   CheckCircleOutlineRounded,
   ChevronLeftRounded,
   ChevronRightRounded,
@@ -39,12 +42,13 @@ import {
   CHECKLIST_DRIVERS,
   INITIAL_CHECKLIST_RECORDS,
   updateActualReportTime,
-  updatePhaseInspector,
   updatePhaseTime,
 } from './checklistData';
+import { formatVehiclePlate } from './vehiclePlate';
 
 const PAGE_SIZES = [10, 25, 50, 100];
 const DEFAULT_SORT = { field: 'updatedAt', direction: 'desc' };
+const isValidReportTime = (value) => /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
 const getCurrentTime = () => new Intl.DateTimeFormat('zh-TW', {
   hour: '2-digit',
   minute: '2-digit',
@@ -53,7 +57,7 @@ const getCurrentTime = () => new Intl.DateTimeFormat('zh-TW', {
 
 const clampChecklistPanelWidth = (width) => {
   if (typeof window === 'undefined') return 420;
-  const maximumWidth = Math.floor(window.innerWidth * 0.5);
+  const maximumWidth = Math.floor(window.innerWidth * 0.6);
   const minimumWidth = Math.min(320, maximumWidth);
   return Math.min(maximumWidth, Math.max(minimumWidth, width));
 };
@@ -95,7 +99,39 @@ function SortLabel({ label, field, sort, onSort }) {
   );
 }
 
-function ChecklistContent({ sections, editablePhases = [], phaseActions = {}, onChange, onEditPhase, onSavePhase, onCancelPhase, onCheckPhase }) {
+function ChecklistContent({
+  sections,
+  editablePhases = [],
+  phaseActions = {},
+  onChange,
+  onEditPhase,
+  onSavePhase,
+  onCancelPhase,
+  onCheckPhase,
+  onReport,
+  reportTimeEditing = false,
+  reportTimeDraft = '',
+  reportTimeEditDisabled = false,
+  onStartReportTimeEdit,
+  onReportTimeDraftChange,
+  onCancelReportTimeEdit,
+  onSaveReportTimeEdit,
+}) {
+  const [reportHour = '', reportMinute = ''] = reportTimeDraft.split(':');
+  const updateReportTimePart = (part, rawValue, maximum) => {
+    const digits = rawValue.replace(/\D/g, '').slice(0, 2);
+    if (digits.length === 2 && Number(digits) > maximum) return;
+    onReportTimeDraftChange(part === 'hour'
+      ? `${digits}:${reportMinute}`
+      : `${reportHour}:${digits}`);
+  };
+  const normalizeReportTimePart = (part, value) => {
+    if (!value) return;
+    const normalizedValue = value.padStart(2, '0');
+    onReportTimeDraftChange(part === 'hour'
+      ? `${normalizedValue}:${reportMinute}`
+      : `${reportHour}:${normalizedValue}`);
+  };
   const updateItem = (sectionIndex, itemIndex, patch) => {
     if (!onChange) return;
     onChange(sections.map((section, currentSectionIndex) => (
@@ -114,15 +150,24 @@ function ChecklistContent({ sections, editablePhases = [], phaseActions = {}, on
     <Stack className="checklist-form" spacing={2}>
       {sections.map((section, sectionIndex) => {
         const editable = section.phase && editablePhases.includes(section.phase);
-        const inspectorItem = section.items.find((item) => item.inspector);
-        const visibleItems = section.items.filter((item) => !item.inspector);
+        const visibleItems = section.items;
         return (
-        <Box key={section.title} className={`checklist-form-section ${section.readonly ? 'readonly' : ''} ${editable ? 'editable' : ''}`}>
+        <Box
+          key={section.title}
+          className={`checklist-form-section ${section.readonly ? 'readonly' : ''} ${editable ? 'editable' : ''} ${phaseActions[section.phase]?.contentDisabled ? 'disabled' : ''}`}
+          aria-disabled={phaseActions[section.phase]?.contentDisabled || undefined}
+        >
           {!section.readonly && (
             <Box className="checklist-form-title-row">
               <Typography className="checklist-form-title">{section.title}</Typography>
               {section.phase && !editable && (
-                <Button size="small" variant="text" startIcon={<EditOutlined />} onClick={() => onEditPhase(section.phase)}>
+                <Button
+                  size="small"
+                  variant="text"
+                  startIcon={<EditOutlined />}
+                  disabled={phaseActions[section.phase]?.editDisabled}
+                  onClick={() => onEditPhase(section.phase)}
+                >
                   編輯
                 </Button>
               )}
@@ -132,6 +177,13 @@ function ChecklistContent({ sections, editablePhases = [], phaseActions = {}, on
             {visibleItems.map((item, itemIndex) => {
               const originalItemIndex = section.items.indexOf(item);
               const startsGroup = item.group && item.group !== visibleItems[itemIndex - 1]?.group;
+              const [systolic = '', diastolic = ''] = item.kind === 'bloodPressure' && item.value !== '-'
+                ? String(item.value || '').split('/')
+                : ['', ''];
+              const updateBloodPressure = (nextSystolic, nextDiastolic) => {
+                const nextValue = nextSystolic || nextDiastolic ? `${nextSystolic}/${nextDiastolic}` : '';
+                updateItem(sectionIndex, originalItemIndex, { value: nextValue });
+              };
               return (
                 <Box key={item.label} className={`checklist-form-item-wrap kind-${item.kind}-wrap`}>
                   {startsGroup && (
@@ -139,10 +191,13 @@ function ChecklistContent({ sections, editablePhases = [], phaseActions = {}, on
                       {item.group}
                     </Typography>
                   )}
-                  <Box className={`checklist-form-item kind-${item.kind}`}>
+                  <Box
+                    className={`checklist-form-item kind-${item.kind} ${item.reportAction ? 'report-time-item' : ''}`}
+                    sx={item.reportAction ? { width: '100%' } : undefined}
+                  >
                     {item.kind === 'confirm' ? (
                       <FormControlLabel
-                        className="checklist-confirm-control"
+                        className={`checklist-confirm-control ${item.wrapLabel ? 'wrap-label' : ''}`}
                         control={(
                           <Checkbox
                             size="small"
@@ -155,7 +210,16 @@ function ChecklistContent({ sections, editablePhases = [], phaseActions = {}, on
                       />
                     ) : (
                       <>
-                        <Typography className="checklist-form-label">{item.label}</Typography>
+                        {!(item.reportAction && !reportTimeEditing) && (
+                          <Typography className={`checklist-form-label ${item.labelNote ? 'has-note' : ''}`}>
+                            {item.label}
+                            {item.labelNote && (
+                              <Box component="span" className="checklist-form-label-note">
+                                {item.labelNote}
+                              </Box>
+                            )}
+                          </Typography>
+                        )}
                         {editable && item.kind === 'choice' && !item.readonly ? (
                           <RadioGroup
                             row
@@ -167,16 +231,179 @@ function ChecklistContent({ sections, editablePhases = [], phaseActions = {}, on
                               <FormControlLabel key={option} value={option} control={<Radio size="small" />} label={option} />
                             ))}
                           </RadioGroup>
+                        ) : editable && item.kind === 'bloodPressure' && !item.readonly ? (
+                          <Box
+                            sx={{
+                              display: 'grid',
+                              gridTemplateColumns: 'minmax(0, 1fr) auto minmax(0, 1fr)',
+                              alignItems: 'center',
+                              gap: 1,
+                            }}
+                          >
+                            <TextField
+                              size="small"
+                              value={systolic}
+                              placeholder="收縮壓"
+                              onChange={(event) => updateBloodPressure(event.target.value, diastolic)}
+                              slotProps={{
+                                htmlInput: {
+                                  'aria-label': '收縮壓',
+                                  inputMode: 'numeric',
+                                },
+                              }}
+                            />
+                            <Typography aria-hidden="true" sx={{ color: 'text.secondary' }}>/</Typography>
+                            <TextField
+                              size="small"
+                              value={diastolic}
+                              placeholder="舒張壓"
+                              onChange={(event) => updateBloodPressure(systolic, event.target.value)}
+                              slotProps={{
+                                htmlInput: {
+                                  'aria-label': '舒張壓',
+                                  inputMode: 'numeric',
+                                },
+                                input: {
+                                  endAdornment: (
+                                    <InputAdornment
+                                      position="end"
+                                      sx={{ '& .MuiTypography-root': { fontSize: 13 } }}
+                                    >
+                                      {item.unit}
+                                    </InputAdornment>
+                                  ),
+                                },
+                              }}
+                            />
+                          </Box>
                         ) : editable && !item.readonly ? (
                           <TextField
                             size="small"
                             fullWidth
                             value={item.value === '-' ? '' : item.value}
                             onChange={(event) => updateItem(sectionIndex, originalItemIndex, { value: event.target.value })}
+                            slotProps={item.unit ? {
+                              input: {
+                                endAdornment: (
+                                  <InputAdornment
+                                    position="end"
+                                    sx={{ '& .MuiTypography-root': { fontSize: 13 } }}
+                                  >
+                                    {item.unit}
+                                  </InputAdornment>
+                                ),
+                              },
+                            } : undefined}
                           />
+                        ) : item.reportAction && reportTimeEditing ? (
+                          <Stack className="checklist-report-time-editor" direction="row" alignItems="center" spacing={0.5}>
+                            <Box className="checklist-time-picker" role="group" aria-label="實際報到時間">
+                              <InputBase
+                                value={reportHour}
+                                placeholder="時"
+                                inputProps={{
+                                  'aria-label': '實際報到小時',
+                                  inputMode: 'numeric',
+                                  pattern: '[0-9]*',
+                                  maxLength: 2,
+                                  autoComplete: 'off',
+                                }}
+                                onChange={(event) => updateReportTimePart('hour', event.target.value, 23)}
+                                onBlur={() => normalizeReportTimePart('hour', reportHour)}
+                              />
+                              <Typography component="span" className="checklist-time-separator">:</Typography>
+                              <InputBase
+                                value={reportMinute}
+                                placeholder="分"
+                                inputProps={{
+                                  'aria-label': '實際報到分鐘',
+                                  inputMode: 'numeric',
+                                  pattern: '[0-9]*',
+                                  maxLength: 2,
+                                  autoComplete: 'off',
+                                }}
+                                onChange={(event) => updateReportTimePart('minute', event.target.value, 59)}
+                                onBlur={() => normalizeReportTimePart('minute', reportMinute)}
+                              />
+                            </Box>
+                            <Tooltip title="取消" arrow placement="top">
+                              <Box component="span" className="checklist-report-time-action-wrap">
+                                <IconButton className="checklist-report-time-action" size="small" aria-label="取消修改時間" onClick={onCancelReportTimeEdit}>
+                                  <CloseRounded fontSize="small" />
+                                </IconButton>
+                              </Box>
+                            </Tooltip>
+                            <Tooltip title="儲存時間" arrow placement="top">
+                              <Box component="span" className="checklist-report-time-action-wrap">
+                                <IconButton
+                                  className="checklist-report-time-action"
+                                  size="small"
+                                  color="primary"
+                                  disabled={!isValidReportTime(reportTimeDraft)}
+                                  aria-label="儲存實際報到時間"
+                                  onClick={onSaveReportTimeEdit}
+                                >
+                                  <CheckRounded fontSize="small" />
+                                </IconButton>
+                              </Box>
+                            </Tooltip>
+                          </Stack>
+                        ) : item.reportAction ? (
+                          <Stack spacing={0.75}>
+                            {(!item.value || item.value === '-') ? (
+                              <Button
+                                fullWidth
+                                className="checklist-report-action"
+                                size="small"
+                                variant="contained"
+                                disabled={reportTimeEditDisabled}
+                                onClick={onReport}
+                              >
+                                報到
+                              </Button>
+                            ) : (
+                              <Box
+                                sx={{
+                                  display: 'grid',
+                                  gridTemplateColumns: 'minmax(0, 1fr) 32px',
+                                  alignItems: 'end',
+                                  columnGap: 1,
+                                  width: '100%',
+                                }}
+                              >
+                                <Stack spacing={0}>
+                                  <Typography className="checklist-form-label">{item.label}</Typography>
+                                  <Typography className="checklist-form-value">{item.value}</Typography>
+                                </Stack>
+                                <Tooltip title="修改時間" arrow placement="top">
+                                  <Box component="span" sx={{ display: 'inline-flex', justifySelf: 'end' }}>
+                                      <IconButton
+                                        size="small"
+                                        color="primary"
+                                        disabled={reportTimeEditDisabled}
+                                        aria-label="修改實際報到時間"
+                                        sx={{ width: 32, height: 32, flex: '0 0 32px' }}
+                                        onClick={onStartReportTimeEdit}
+                                      >
+                                        <EditOutlined fontSize="small" />
+                                      </IconButton>
+                                  </Box>
+                                </Tooltip>
+                              </Box>
+                            )}
+                          </Stack>
                         ) : (
                           <Typography className="checklist-form-value">
-                            {item.kind === 'choice' ? item.status || '-' : item.value || '-'}
+                            {item.kind === 'choice'
+                              ? item.status || '-'
+                              : item.kind === 'bloodPressure' && item.value
+                                ? item.value.replace('/', ' / ')
+                                : item.value || '-'}
+                            {item.kind !== 'choice' && item.value && item.unit && (
+                              <Box component="span" sx={{ ml: 0.5, fontSize: 13 }}>
+                                {item.unit}
+                              </Box>
+                            )}
                           </Typography>
                         )}
                       </>
@@ -201,17 +428,11 @@ function ChecklistContent({ sections, editablePhases = [], phaseActions = {}, on
           )}
           {section.phase && phaseActions[section.phase] && !editable && (
             <Box className="checklist-review-footer">
-              {inspectorItem && (
-                <Box className="checklist-review-inspector">
-                  <Typography className="checklist-review-inspector-label">{inspectorItem.label}</Typography>
-                  <Typography className="checklist-review-inspector-value">{inspectorItem.value || '-'}</Typography>
-                </Box>
-              )}
               <Box className="checklist-section-action">
                 <Tooltip
                   arrow
                   placement="top"
-                  title={phaseActions[section.phase].checked ? '點擊切回未點檢' : ''}
+                  title={phaseActions[section.phase].disabledReason || (phaseActions[section.phase].checked ? '點擊切回未點檢' : '')}
                 >
                   <span className="checklist-phase-action-wrap">
                     <Button
@@ -346,6 +567,8 @@ export default function ChecklistManagementPage() {
   const [activeId, setActiveId] = useState(null);
   const [draftSections, setDraftSections] = useState([]);
   const [editingPhases, setEditingPhases] = useState({ pre: false, post: false });
+  const [reportTimeEditing, setReportTimeEditing] = useState(false);
+  const [reportTimeDraft, setReportTimeDraft] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [snackbar, setSnackbar] = useState('');
   const [panelWidth, setPanelWidth] = useState(getInitialChecklistPanelWidth);
@@ -378,6 +601,8 @@ export default function ChecklistManagementPage() {
 
   useEffect(() => {
     setEditingPhases({ pre: false, post: false });
+    setReportTimeEditing(false);
+    setReportTimeDraft('');
   }, [activeId]);
 
   useLayoutEffect(() => {
@@ -421,7 +646,7 @@ export default function ChecklistManagementPage() {
     }
     if (event.key === 'Home' || event.key === 'End') {
       event.preventDefault();
-      const maximumWidth = Math.floor(window.innerWidth * 0.5);
+      const maximumWidth = Math.floor(window.innerWidth * 0.6);
       setPanelWidth(event.key === 'Home' ? Math.min(320, maximumWidth) : maximumWidth);
     }
   };
@@ -452,29 +677,22 @@ export default function ChecklistManagementPage() {
     const currentSection = activeRecord.sections.find((section) => section.phase === phase);
     const changed = JSON.stringify(currentSection) !== JSON.stringify(draftSection);
     const phaseWasChecked = phase === 'pre' ? activeRecord.preChecked : activeRecord.postChecked;
+    const inspectorKey = phase === 'pre' ? 'preInspector' : 'postInspector';
+    const selectedInspector = draftSection.items.find((item) => item.inspector)?.value || null;
 
     setRecords((current) => current.map((record) => {
       if (record.id !== activeId) return record;
       let sections = record.sections.map((section) => section.phase === phase ? draftSection : section);
-      const updates = {};
+      const updates = { [inspectorKey]: selectedInspector };
       const phaseUpdateTime = getCurrentTime();
-      const isInitialPreSave = phase === 'pre' && record.actualReportTime === '-';
 
       if (phase === 'post') sections = updatePhaseTime(sections, 'post', phaseUpdateTime);
-      if (isInitialPreSave) {
-        sections = updateActualReportTime(sections, phaseUpdateTime);
-        updates.actualReportTime = phaseUpdateTime;
-      }
 
       if (changed && phase === 'pre' && record.preChecked) {
-        sections = updatePhaseInspector(sections, 'pre', '-');
         updates.preChecked = false;
-        updates.preInspector = null;
       }
       if (changed && phase === 'post' && record.postChecked) {
-        sections = updatePhaseInspector(sections, 'post', '-');
         updates.postChecked = false;
-        updates.postInspector = null;
       }
 
       return {
@@ -490,31 +708,79 @@ export default function ChecklistManagementPage() {
       : `${phase === 'pre' ? '作業前' : '作業後'}點呼已儲存`);
   };
 
+  const markReported = () => {
+    if (!activeRecord || activeRecord.actualReportTime !== '-') return;
+    const time = getCurrentTime();
+    setRecords((current) => current.map((record) => record.id === activeId ? {
+      ...record,
+      actualReportTime: time,
+      sections: updateActualReportTime(record.sections, time),
+      updatedAt: `${record.date} ${time}`,
+    } : record));
+    setSnackbar(`已報到，實際報到時間 ${time}`);
+  };
+
+  const startReportTimeEdit = () => {
+    if (!activeRecord || editingPhases.pre || editingPhases.post) return;
+    setReportTimeDraft(activeRecord.actualReportTime === '-' ? '' : activeRecord.actualReportTime);
+    setReportTimeEditing(true);
+  };
+
+  const cancelReportTimeEdit = () => {
+    setReportTimeEditing(false);
+    setReportTimeDraft('');
+  };
+
+  const saveReportTimeEdit = () => {
+    if (!activeRecord || !isValidReportTime(reportTimeDraft)) return;
+    const previousTime = activeRecord.actualReportTime;
+    if (previousTime === reportTimeDraft) {
+      cancelReportTimeEdit();
+      return;
+    }
+    const changedAt = `${activeRecord.date} ${getCurrentTime()}`;
+    const updateType = previousTime === '-' ? '補登' : '更正';
+    setRecords((current) => current.map((record) => record.id === activeId ? {
+      ...record,
+      actualReportTime: reportTimeDraft,
+      sections: updateActualReportTime(record.sections, reportTimeDraft),
+      updatedAt: changedAt,
+    } : record));
+    setReportTimeEditing(false);
+    setReportTimeDraft('');
+    setSnackbar(`實際報到時間已${updateType}為 ${reportTimeDraft}`);
+  };
+
   const markPhaseChecked = (phase) => {
     if (!activeRecord || activeRecord.actualReportTime === '-') return;
     const checkedKey = phase === 'pre' ? 'preChecked' : 'postChecked';
     const inspectorKey = phase === 'pre' ? 'preInspector' : 'postInspector';
+    const selectedInspector = activeRecord.sections
+      .find((section) => section.phase === phase)
+      ?.items.find((item) => item.inspector)?.value;
 
     if (activeRecord[checkedKey]) {
-      const sections = updatePhaseInspector(draftSections, phase, '-');
       setRecords((current) => current.map((record) => record.id === activeId ? {
         ...record,
         [checkedKey]: false,
-        [inspectorKey]: null,
-        sections,
+        sections: draftSections,
         updatedAt: `${record.date} ${getCurrentTime()}`,
       } : record));
       setSnackbar(`${phase === 'pre' ? '作業前' : '作業後'}已切回未點檢`);
       return;
     }
 
-    let sections = updatePhaseInspector(draftSections, phase, '內部員工 / 王日通');
+    if (!selectedInspector || selectedInspector === '-') {
+      setSnackbar('請先編輯並填寫點檢者');
+      return;
+    }
+
     const time = getCurrentTime();
     setRecords((current) => current.map((record) => record.id === activeId ? {
       ...record,
       [checkedKey]: true,
-      [inspectorKey]: '內部員工 / 王日通',
-      sections,
+      [inspectorKey]: selectedInspector,
+      sections: draftSections,
       updatedAt: `${record.date} ${time}`,
     } : record));
     setSnackbar(`${phase === 'pre' ? '作業前' : '作業後'}點檢已完成`);
@@ -599,7 +865,7 @@ export default function ChecklistManagementPage() {
                 >
                   <Typography>{record.driver}</Typography>
                   <Typography>{record.route}</Typography>
-                  <Typography>{record.plate}</Typography>
+                  <Typography>{formatVehiclePlate(record.plate)}</Typography>
                   <Typography>{record.reportTime}</Typography>
                   <Typography>{record.actualReportTime}</Typography>
                   <Status checked={record.preChecked} />
@@ -626,8 +892,8 @@ export default function ChecklistManagementPage() {
             tabIndex={0}
             aria-label="調整點呼表面板寬度"
             aria-orientation="vertical"
-            aria-valuemin={Math.min(320, Math.floor(window.innerWidth * 0.5))}
-            aria-valuemax={Math.floor(window.innerWidth * 0.5)}
+            aria-valuemin={Math.min(320, Math.floor(window.innerWidth * 0.6))}
+            aria-valuemax={Math.floor(window.innerWidth * 0.6)}
             aria-valuenow={Math.round(panelWidth)}
             onPointerDown={startPanelResize}
             onKeyDown={resizePanelWithKeyboard}
@@ -646,7 +912,17 @@ export default function ChecklistManagementPage() {
                   {activeRecord.updatedAt === '-' ? '-' : `${activeRecord.updatedAt} 最後更新`}
                 </Typography>
               </Box>
-              <ChecklistContent sections={draftSections.filter((section) => section.readonly)} />
+              <ChecklistContent
+                sections={draftSections.filter((section) => section.readonly)}
+                onReport={markReported}
+                reportTimeEditing={reportTimeEditing}
+                reportTimeDraft={reportTimeDraft}
+                reportTimeEditDisabled={editingPhases.pre || editingPhases.post}
+                onStartReportTimeEdit={startReportTimeEdit}
+                onReportTimeDraftChange={setReportTimeDraft}
+                onCancelReportTimeEdit={cancelReportTimeEdit}
+                onSaveReportTimeEdit={saveReportTimeEdit}
+              />
             </Box>
             <ChecklistContent
               sections={draftSections.filter((section) => !section.readonly)}
@@ -661,11 +937,17 @@ export default function ChecklistManagementPage() {
               phaseActions={{
                 pre: {
                   checked: activeRecord.preChecked,
-                  disabled: activeRecord.actualReportTime === '-' || editingPhases.pre || editingPhases.post,
+                  contentDisabled: activeRecord.actualReportTime === '-',
+                  editDisabled: activeRecord.actualReportTime === '-' || reportTimeEditing,
+                  disabled: activeRecord.actualReportTime === '-' || reportTimeEditing || editingPhases.pre || editingPhases.post || !activeRecord.preInspector,
+                  disabledReason: activeRecord.actualReportTime !== '-' && !activeRecord.preInspector ? '請先編輯並填寫點檢者' : '',
                 },
                 post: {
                   checked: activeRecord.postChecked,
-                  disabled: activeRecord.actualReportTime === '-' || editingPhases.pre || editingPhases.post,
+                  contentDisabled: activeRecord.actualReportTime === '-',
+                  editDisabled: activeRecord.actualReportTime === '-' || reportTimeEditing,
+                  disabled: activeRecord.actualReportTime === '-' || reportTimeEditing || editingPhases.pre || editingPhases.post || !activeRecord.postInspector,
+                  disabledReason: activeRecord.actualReportTime !== '-' && !activeRecord.postInspector ? '請先編輯並填寫點檢者' : '',
                 },
               }}
             />
