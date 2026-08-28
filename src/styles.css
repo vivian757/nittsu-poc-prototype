@@ -574,11 +574,16 @@ body.map-resizing * { cursor: ns-resize !important; }
 .map-pin-status .warning-dot { fill: #f8fafc; }
 .map-pin-status.risk { background: transparent; }
 .vehicle-leaflet-tooltip.leaflet-tooltip { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.vehicle-leaflet-tooltip.leaflet-tooltip::after { content: ''; position: absolute; left: 0; right: 0; top: -12px; height: 14px; }
 .vehicle-leaflet-tooltip.leaflet-tooltip-bottom::before { border-bottom-color: #fff; }
 .context-map-panel .leaflet-control-zoom { overflow: hidden; border: 1px solid #d4dde7; border-radius: 7px; box-shadow: 0 3px 10px rgba(31,43,58,.12); }
 .context-map-panel .leaflet-control-zoom a { width: 32px; height: 32px; color: #3f4f62; border-color: #e0e6ed; background: rgba(255,255,255,.96); font-size: 19px; line-height: 31px; }
 .context-map-panel .leaflet-control-zoom a:hover { color: #123d88; background: #fff; }
-.map-vehicle-tooltip { position: relative; min-width: 285px; max-width: 340px; padding: 12px; color: #192434; border: 1px solid #dbe3ec; border-radius: 7px; background: #fff; box-shadow: 0 10px 28px rgba(22,34,52,.16); }
+.map-vehicle-tooltip { position: relative; min-width: 285px; max-width: 340px; padding: 12px; color: #192434; border: 1px solid #dbe3ec; border-radius: 7px; background: #fff; box-shadow: 0 10px 28px rgba(22,34,52,.16); transform-origin: top center; animation: map-vehicle-tooltip-enter 180ms cubic-bezier(.22,1,.36,1) both; will-change: opacity, transform; }
+.map-vehicle-tooltip.is-exiting { pointer-events: none; animation: map-vehicle-tooltip-exit 150ms cubic-bezier(.4,0,1,1) both; }
+@keyframes map-vehicle-tooltip-enter { from { opacity: 0; transform: translateY(-4px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes map-vehicle-tooltip-exit { from { opacity: 1; transform: translateY(0) scale(1); } to { opacity: 0; transform: translateY(-2px) scale(.99); } }
+@media (prefers-reduced-motion: reduce) { .map-vehicle-tooltip, .map-vehicle-tooltip.is-exiting { animation-duration: 1ms; } }
 .map-tooltip-card-header { min-height: 22px; }
 .map-tooltip-row { margin-top: 9px; display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px; align-items: start; }
 .map-tooltip-row span { color: #778496; font-size: 11px; line-height: 1.5; }

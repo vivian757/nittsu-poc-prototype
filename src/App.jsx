@@ -2809,7 +2809,11 @@ function createVehicleMapIcon(vehicle, hasAbnormal, focused, emphasized) {
   });
 }
 
-function VehicleMapPin({ vehicle, focused, emphasized, onOpen }) {
+function VehicleMapPin({ vehicle, focused, emphasized, tooltipOpen, anotherTooltipOpen, onTooltipEnter, onTooltipLeave, onOpen }) {
+  const tooltipCloseTimerRef = useRef(null);
+  const tooltipExitTimerRef = useRef(null);
+  const [tooltipRendered, setTooltipRendered] = useState(tooltipOpen);
+  const [tooltipExiting, setTooltipExiting] = useState(false);
   const thresholds = useMonitoringThresholds();
   const task = getRelevantVehicleTask(vehicle);
   const displayedDriverCandidate = task?.assignedDriver ?? vehicle.driver;
@@ -2870,6 +2874,55 @@ function VehicleMapPin({ vehicle, focused, emphasized, onOpen }) {
   const showArrivalDifference = arrivalDifferenceState !== 'ontime';
   const showDepartureDifference = hasDeparted && departureDifferenceState !== 'ontime';
   const showActualDifference = hasStarted && (showArrivalDifference || showDepartureDifference);
+  const keepTooltipOpen = () => {
+    if (tooltipCloseTimerRef.current) {
+      window.clearTimeout(tooltipCloseTimerRef.current);
+      tooltipCloseTimerRef.current = null;
+    }
+    onTooltipEnter(vehicle.id);
+  };
+  const scheduleTooltipClose = () => {
+    if (tooltipCloseTimerRef.current) {
+      window.clearTimeout(tooltipCloseTimerRef.current);
+    }
+    tooltipCloseTimerRef.current = window.setTimeout(() => {
+      onTooltipLeave(vehicle.id);
+      tooltipCloseTimerRef.current = null;
+    }, 220);
+  };
+
+  useEffect(() => () => {
+    if (tooltipCloseTimerRef.current) {
+      window.clearTimeout(tooltipCloseTimerRef.current);
+    }
+    if (tooltipExitTimerRef.current) {
+      window.clearTimeout(tooltipExitTimerRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tooltipExitTimerRef.current) {
+      window.clearTimeout(tooltipExitTimerRef.current);
+      tooltipExitTimerRef.current = null;
+    }
+    if (tooltipOpen) {
+      setTooltipRendered(true);
+      setTooltipExiting(false);
+      return;
+    }
+    if (!tooltipRendered) return;
+    if (anotherTooltipOpen) {
+      setTooltipRendered(false);
+      setTooltipExiting(false);
+      return;
+    }
+    setTooltipExiting(true);
+    tooltipExitTimerRef.current = window.setTimeout(() => {
+      setTooltipRendered(false);
+      setTooltipExiting(false);
+      tooltipExitTimerRef.current = null;
+    }, 150);
+  }, [anotherTooltipOpen, tooltipOpen]);
 
   return (
     <Marker
@@ -2878,10 +2931,29 @@ function VehicleMapPin({ vehicle, focused, emphasized, onOpen }) {
       zIndexOffset={focused ? 30000 : emphasized ? 10000 : hasAbnormal ? 500 : 0}
       riseOnHover
       riseOffset={focused ? 1000 : 12000}
-      eventHandlers={{ click: () => onOpen(vehicle) }}
+      eventHandlers={{
+        click: () => onOpen(vehicle),
+        mouseover: keepTooltipOpen,
+        mouseout: scheduleTooltipClose,
+      }}
     >
-      <LeafletTooltip direction="bottom" opacity={1} permanent={focused && !emphasized} className="vehicle-leaflet-tooltip">
-        <Box className="map-vehicle-tooltip">
+      {tooltipRendered && (
+        <LeafletTooltip
+          direction="bottom"
+          opacity={1}
+          permanent
+          interactive
+          className="vehicle-leaflet-tooltip"
+          eventHandlers={{
+            mouseover: keepTooltipOpen,
+            mouseout: scheduleTooltipClose,
+          }}
+        >
+          <Box
+            className={`map-vehicle-tooltip ${tooltipExiting ? 'is-exiting' : ''}`}
+            onMouseEnter={keepTooltipOpen}
+            onMouseLeave={scheduleTooltipClose}
+          >
           <Stack className="map-tooltip-card-header" direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
             <Box>
               <Typography variant="subtitle2" fontWeight={750}>{formatVehiclePlate(vehicle.id)}</Typography>
@@ -2964,8 +3036,9 @@ function VehicleMapPin({ vehicle, focused, emphasized, onOpen }) {
               </b>
             </Box>
           )}
-        </Box>
-      </LeafletTooltip>
+          </Box>
+        </LeafletTooltip>
+      )}
     </Marker>
   );
 }
@@ -4521,6 +4594,7 @@ export default function App() {
   const [mapHeight, setMapHeight] = useState(300);
   const [overviewFilter, setOverviewFilter] = useState('all');
   const [focusedVehicleId, setFocusedVehicleId] = useState(null);
+  const [hoveredMapVehicleId, setHoveredMapVehicleId] = useState(null);
   const [stationMapFocus, setStationMapFocus] = useState(null);
   const [mapFocusRequest, setMapFocusRequest] = useState(null);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
@@ -4729,6 +4803,8 @@ export default function App() {
   const comparisonOperationInsight = comparisonVehicle
     ? getVehicleOperationInsight(comparisonVehicle, monitoringThresholds)
     : null;
+  const visibleMapTooltipVehicleId = hoveredMapVehicleId
+    ?? (focusedVehicleId && comparisonVehicle?.id !== focusedVehicleId ? focusedVehicleId : null);
   const isMovingToComparisonTarget = Boolean(
     comparisonOperationInsight?.phase === 'moving'
     && comparisonOperationInsight.movingToTask?.id === comparisonTargetTask?.id,
@@ -5050,6 +5126,7 @@ export default function App() {
   const focusTaskInTimeline = (task) => {
     const vehicleId = task.fixedVehicleId ?? task.vehicleId;
     if (!vehicleId) return;
+    if (maximizedView === 'map') setMaximizedView(null);
     setOverviewFilter('all');
     setFocusedVehicleId(vehicleId);
     if (!focusVehicleAgainstOrder(vehicleId, task)) setStationMapFocus(null);
@@ -5303,6 +5380,10 @@ export default function App() {
   }, [focusedVehicleId]);
 
   useEffect(() => {
+    if (!mapExpanded) setHoveredMapVehicleId(null);
+  }, [mapExpanded]);
+
+  useEffect(() => {
     if (!maximizedView) return undefined;
     const restoreWorkspace = (event) => {
       if (event.key === 'Escape') setMaximizedView(null);
@@ -5424,6 +5505,14 @@ export default function App() {
                       vehicle={vehicle}
                       focused={focusedVehicleId === vehicle.id}
                       emphasized={comparisonVehicle?.id === vehicle.id}
+                      tooltipOpen={visibleMapTooltipVehicleId === vehicle.id}
+                      anotherTooltipOpen={Boolean(
+                        visibleMapTooltipVehicleId && visibleMapTooltipVehicleId !== vehicle.id,
+                      )}
+                      onTooltipEnter={setHoveredMapVehicleId}
+                      onTooltipLeave={(vehicleId) => {
+                        setHoveredMapVehicleId((current) => (current === vehicleId ? null : current));
+                      }}
                       onOpen={focusVehicleFromMap}
                     />
                   ))}
