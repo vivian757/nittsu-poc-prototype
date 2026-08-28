@@ -5389,7 +5389,7 @@ export default function App() {
                 <MapFocusHandler request={mapFocusRequest} vehicles={initialVehicles} />
                   {comparisonTarget?.position && (
                     <Marker position={comparisonTarget.position} icon={taskLocationMapIcon} zIndexOffset={9000}>
-                      <LeafletTooltip direction="top" opacity={1} permanent={Boolean(comparisonVehicle)} className="task-location-tooltip">
+                      <LeafletTooltip direction="top" opacity={1} permanent={Boolean(comparisonTarget.label)} className="task-location-tooltip">
                         <Typography variant="caption" fontWeight={750}>{comparisonTarget.label}</Typography>
                       </LeafletTooltip>
                     </Marker>
