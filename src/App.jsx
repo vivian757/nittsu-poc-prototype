@@ -5337,7 +5337,7 @@ export default function App() {
                 </Button>
               </Stack>
               <Stack direction="row" alignItems="center" spacing={1} sx={{ ml: 'auto' }}>
-                <Tooltip title="資料更新時間：14:30:18">
+                <Tooltip title="資料更新時間：14:30">
                   <Button size="small" color="inherit" startIcon={<RefreshRounded />} className="sync-button">
                     14:30 更新
                   </Button>
