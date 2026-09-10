@@ -1,6 +1,8 @@
-.DS_Store
-node_modules/
-dist/
-tmp/
-專案背景/
+/*
+!/.gitignore
+!/prototype/
+
+/prototype/node_modules/
+/prototype/dist/
+**/.DS_Store
 *.log
