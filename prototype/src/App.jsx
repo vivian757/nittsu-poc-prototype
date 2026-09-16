@@ -5250,6 +5250,11 @@ export default function App() {
     }
   };
 
+  const selectTimelineCandidate = (candidate) => {
+    if (activeCandidate?.driverName === candidate.driverName) return;
+    selectDriverForTask(candidate.driverName);
+  };
+
   const dropTaskOnCandidate = (candidate) => {
     if (!draggedTask) return;
     const task = draggedTask;
@@ -5651,7 +5656,7 @@ export default function App() {
                 selectedDriverName={selectedDriverName}
                 activeCandidate={activeCandidate}
                 hoveredCandidate={hoveredCandidate}
-                onSelectCandidate={(candidate) => selectDriverForTask(candidate.driverName)}
+                onSelectCandidate={selectTimelineCandidate}
                 onHoverCandidate={setHoveredCandidate}
                 onDropTask={dropTaskOnCandidate}
                 onLocateVehicle={locateVehicleFromTimeline}
