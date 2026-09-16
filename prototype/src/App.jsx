@@ -65,6 +65,7 @@ import {
 } from '@mui/icons-material';
 import ChecklistManagementPage from './ChecklistManagementPage';
 import MonitoringSettingsPage, { DEFAULT_MONITORING_SETTINGS } from './MonitoringSettingsPage';
+import { fetchRoadRoute } from './roadRouting';
 import { formatVehiclePlate } from './vehiclePlate';
 
 const START_HOUR = 0;
@@ -2682,11 +2683,8 @@ function VehicleIconArtwork() {
   );
 }
 
-function createRouteLineLabelIcon(distanceKm, estimatedTravelMinutes = null) {
-  const hasEstimatedTravelTime = Number.isFinite(estimatedTravelMinutes);
-  const label = hasEstimatedTravelTime
-    ? `預計行駛 ${Math.round(estimatedTravelMinutes)} 分`
-    : `直線距離 ${distanceKm.toFixed(1)} km`;
+function createRouteLineLabelIcon(estimatedTravelMinutes) {
+  const label = `預計行駛 ${Math.round(estimatedTravelMinutes)} 分`;
   return L.divIcon({
     className: 'distance-line-label-root',
     html: `<span class="distance-line-label">${label}</span>`,
@@ -2720,6 +2718,28 @@ function MapFocusHandler({ request, vehicles }) {
 
     return () => window.clearTimeout(focusTimer);
   }, [map, request, vehicles]);
+
+  return null;
+}
+
+function RoadRouteFitHandler({ positions }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!positions?.length) return undefined;
+
+    const focusTimer = window.setTimeout(() => {
+      map.invalidateSize({ animate: false, pan: false });
+      map.fitBounds(L.latLngBounds(positions), {
+        padding: [80, 80],
+        maxZoom: 15,
+        animate: true,
+        duration: 0.65,
+      });
+    }, 80);
+
+    return () => window.clearTimeout(focusTimer);
+  }, [map, positions]);
 
   return null;
 }
@@ -3427,7 +3447,7 @@ function TaskBlock({ task, vehicle, compareMode, visibleHours, isLatestExecutedT
   );
 }
 
-function CandidateSlot({ candidate, selectedTask, active, previewing, compact, onSelect, onHover, onDropTask }) {
+function CandidateSlot({ candidate, selectedTask, active, focused, previewing, compact, onSelect, onHover, onDropTask }) {
   const [dragOver, setDragOver] = useState(false);
   const dragDepth = useRef(0);
   const requestedWindow = selectedTask ? getTaskWindowRange(selectedTask) : null;
@@ -3435,10 +3455,12 @@ function CandidateSlot({ candidate, selectedTask, active, previewing, compact, o
   const displayEnd = requestedWindow?.end ?? candidate.end;
   const left = toPercent(displayStart);
   const width = ((displayEnd - displayStart) / HOUR_COUNT) * 100;
+  const stationName = selectedTask.station ?? selectedTask.customer;
+  const occupancyTooltipTitle = focused ? '預覽：插單佔用空檔' : '插入空檔';
   const tooltipTitle = active ? (
     <Box className="candidate-preview-tooltip">
       <Typography className="candidate-preview-tooltip-title" variant="subtitle2" fontWeight={750}>
-        {selectedTask.station ?? selectedTask.customer}
+        {`預覽：${stationName}`}
       </Typography>
       <Box className="candidate-preview-tooltip-row">
         <Typography component="span">地址</Typography>
@@ -3449,7 +3471,7 @@ function CandidateSlot({ candidate, selectedTask, active, previewing, compact, o
         <Typography component="b">{selectedTask.window}</Typography>
       </Box>
     </Box>
-  ) : '插入司機空檔';
+  ) : occupancyTooltipTitle;
   return (
     <Tooltip
       arrow
@@ -3462,8 +3484,9 @@ function CandidateSlot({ candidate, selectedTask, active, previewing, compact, o
     >
       <Box
         id={`candidate-slot-${candidate.vehicleId}`}
-        className={`candidate-slot ${active ? 'active' : ''} ${previewing ? 'previewing' : ''} ${compact ? 'compact' : ''} ${dragOver ? 'drop-target' : ''}`}
+        className={`candidate-slot ${active ? 'active' : ''} ${focused ? 'focused' : ''} ${previewing ? 'previewing' : ''} ${compact ? 'compact' : ''} ${dragOver ? 'drop-target' : ''}`}
         sx={{ left: `${left}%`, width: `${width}%` }}
+        aria-label={active ? `${stationName}站點資訊` : occupancyTooltipTitle}
         onClick={() => onSelect(candidate)}
         onMouseEnter={() => onHover(candidate)}
         onMouseLeave={() => onHover(null)}
@@ -3487,13 +3510,17 @@ function CandidateSlot({ candidate, selectedTask, active, previewing, compact, o
           if (selectedTask) onDropTask(candidate);
         }}
       >
-        {!active && !dragOver && <MoreTimeRounded fontSize="small" />}
-        {active && !dragOver ? (
-          <span className="candidate-slot-station">{selectedTask.station ?? selectedTask.customer}</span>
+        {dragOver ? (
+          <span>放開以選擇司機</span>
+        ) : active ? (
+          <span className="candidate-slot-station">{stationName}</span>
+        ) : focused ? (
+          <span className="candidate-slot-occupancy">佔用</span>
         ) : (
-          dragOver
-            ? <span>放開以選擇司機</span>
-            : !compact && <span>空檔</span>
+          <>
+            <MoreTimeRounded fontSize="small" />
+            {!compact && <span>空檔</span>}
+          </>
         )}
       </Box>
     </Tooltip>
@@ -3515,8 +3542,12 @@ function Timeline({ vehicles, candidates, selectedTask, selectedDriverName, acti
     : null;
   const candidateFocus = selectedTask?.assignmentMode === 'reassign-driver'
     ? null
-    : hoveredCandidate ?? activeCandidate ?? selectedDriverCandidate;
+    : activeCandidate ?? selectedDriverCandidate;
   const candidateFocusVehicleId = candidateFocus?.vehicleId ?? null;
+  const occupiedPreviewVehicleId = activeCandidate
+    && selectedDriverCandidate?.vehicleId !== activeCandidate.vehicleId
+    ? selectedDriverCandidate?.vehicleId
+    : null;
 
   useEffect(() => {
     const animationFrame = window.requestAnimationFrame(() => {
@@ -3755,6 +3786,7 @@ function Timeline({ vehicles, candidates, selectedTask, selectedDriverName, acti
                   candidate={candidate}
                   selectedTask={selectedTask}
                   active={activeCandidate?.vehicleId === vehicle.id}
+                  focused={candidateFocusVehicleId === vehicle.id || occupiedPreviewVehicleId === vehicle.id}
                   previewing={hoveredCandidate?.vehicleId === vehicle.id}
                   compact={visibleHours >= 24}
                   onSelect={onSelectCandidate}
@@ -3892,7 +3924,7 @@ function OrderQueuePanel({
         <>
           <Box className="order-queue-header">
             <Box>
-              <Typography variant="h6">待插單 ({tasks.length})</Typography>
+              <Typography variant="panelTitle" component="h6">待插單 ({tasks.length})</Typography>
             </Box>
             <Stack direction="row" spacing={0.75} alignItems="center">
               <IconButton aria-label="關閉待插單訂單" onClick={onClose}><CloseRounded /></IconButton>
@@ -4007,7 +4039,7 @@ function DriverCandidateCard({ candidate, vehicleCandidates, selected, activeCan
           {hasDownstreamImpact && (
             <Stack className="candidate-impact-message" direction="row" spacing={0.5} alignItems="center">
               <WarningRounded />
-              <Typography variant="caption">插單後任務銜接時間不足</Typography>
+              <Typography variant="caption">銜接時間不足</Typography>
             </Stack>
           )}
         </Box>
@@ -4028,7 +4060,7 @@ function DriverCandidateCard({ candidate, vehicleCandidates, selected, activeCan
               paper: { className: 'resource-autocomplete-menu-paper' },
               listbox: { className: 'resource-autocomplete-menu-list' },
             }}
-            renderInput={(params) => <TextField {...params} size="small" placeholder="選擇車輛" />}
+            renderInput={(params) => <TextField {...params} size="small" placeholder="選擇指派車輛" />}
           />
         </Box>
       </Collapse>
@@ -4056,7 +4088,7 @@ function DriverReassignmentDialog({ open, impact, onClose, onForward }) {
           <Stack className="reassignment-dialog-title-copy" direction="row" spacing={1} alignItems="center">
             <WarningRounded className="reassignment-dialog-warning-icon" />
             <Box>
-              <Typography variant="subtitle1">插單後任務銜接時間不足</Typography>
+              <Typography variant="subtitle1">銜接時間不足</Typography>
               <Typography variant="caption">請確認是否需變更司機</Typography>
             </Box>
           </Stack>
@@ -4182,7 +4214,7 @@ function TaskPanel({ selectedTask, onDragStart, candidates, selectedDriverName, 
           {embedded && !isDriverReassignment && (
             <IconButton size="small" aria-label="返回待插單列表" onClick={onClearSelection}><ChevronLeftRounded /></IconButton>
           )}
-          <Typography variant="subtitle1">{isDriverReassignment ? '變更指派' : '指派司機與車輛'}</Typography>
+          <Typography variant="panelTitle" component="h6">{isDriverReassignment ? '變更指派' : '指派司機與車輛'}</Typography>
         </Stack>
         <IconButton size="small" aria-label="關閉插單安排" onClick={embedded ? onClosePanel : onClearSelection}><CloseRounded /></IconButton>
       </Box>
@@ -4219,7 +4251,7 @@ function TaskPanel({ selectedTask, onDragStart, candidates, selectedDriverName, 
               ) : (
                 <>
                   <Typography variant="caption" fontWeight={750} color="primary">{selectedTask.id}</Typography>
-                  <Typography className="assessment-order-station" variant="body2" mt={0.35}>
+                  <Typography className="assessment-order-station" variant="sectionTitle" component="p" mt={0.35}>
                     {selectedTask.station ?? selectedTask.customer}
                   </Typography>
                 </>
@@ -4429,7 +4461,7 @@ function ManualResourcePicker({ task, fixedVehicleId = null, taskConnectionGapMi
                 paper: { className: 'resource-autocomplete-menu-paper' },
                 listbox: { className: 'resource-autocomplete-menu-list' },
               }}
-              renderInput={(params) => <TextField {...params} size="small" placeholder="選擇車輛" />}
+              renderInput={(params) => <TextField {...params} size="small" placeholder="選擇指派車輛" />}
             />
           </Box>
         )}
@@ -4597,6 +4629,11 @@ export default function App() {
   const [hoveredMapVehicleId, setHoveredMapVehicleId] = useState(null);
   const [stationMapFocus, setStationMapFocus] = useState(null);
   const [mapFocusRequest, setMapFocusRequest] = useState(null);
+  const [comparisonRoadRoute, setComparisonRoadRoute] = useState({
+    status: 'idle',
+    positions: [],
+    durationMinutes: null,
+  });
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [showActualExecution, setShowActualExecution] = useState(true);
   const [timelineVisibleHours, setTimelineVisibleHours] = useState(24);
@@ -4777,7 +4814,7 @@ export default function App() {
   const timelineCandidates = useMemo(() => {
     const visibleCandidates = driverTimelineCandidates.filter((candidate) => (
       !activeCandidate
-      || (candidate.driverName !== activeCandidate.driverName && candidate.vehicleId !== activeCandidate.vehicleId)
+      || candidate.vehicleId !== activeCandidate.vehicleId
     ));
     if (activeCandidate) {
       visibleCandidates.push(activeCandidate);
@@ -4794,24 +4831,42 @@ export default function App() {
   const comparisonTarget = stationMapFocus ?? (assessmentTask?.pickupPosition
     ? { position: assessmentTask.pickupPosition, label: `插單站點｜${assessmentTask.station ?? assessmentTask.customer}` }
     : null);
-  const comparisonDistanceKm = comparisonVehicle && comparisonTarget?.position
-    ? calculateDistanceKm(comparisonVehicle.position, comparisonTarget.position)
-    : null;
-  const comparisonTargetTask = comparisonVehicle && comparisonTarget?.taskId
-    ? comparisonVehicle.tasks.find((task) => task.id === comparisonTarget.taskId)
-    : null;
-  const comparisonOperationInsight = comparisonVehicle
-    ? getVehicleOperationInsight(comparisonVehicle, monitoringThresholds)
-    : null;
+  const comparisonRouteKey = comparisonVehicle && comparisonTarget?.position
+    ? `${comparisonVehicle.position.join(',')}|${comparisonTarget.position.join(',')}`
+    : '';
   const visibleMapTooltipVehicleId = hoveredMapVehicleId
     ?? (focusedVehicleId && comparisonVehicle?.id !== focusedVehicleId ? focusedVehicleId : null);
-  const isMovingToComparisonTarget = Boolean(
-    comparisonOperationInsight?.phase === 'moving'
-    && comparisonOperationInsight.movingToTask?.id === comparisonTargetTask?.id,
-  );
-  const comparisonEstimatedTravelMinutes = isMovingToComparisonTarget
-    ? Number(comparisonTargetTask?.etaTravelMinutes)
-    : Number.NaN;
+
+  useEffect(() => {
+    if (!mapExpanded || !comparisonRouteKey) {
+      setComparisonRoadRoute({ status: 'idle', positions: [], durationMinutes: null });
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    const startPosition = comparisonVehicle.position;
+    const endPosition = comparisonTarget.position;
+    setComparisonRoadRoute({ status: 'loading', positions: [], durationMinutes: null });
+
+    const requestTimer = window.setTimeout(async () => {
+      try {
+        const roadRoute = await fetchRoadRoute(startPosition, endPosition, { signal: controller.signal });
+        setComparisonRoadRoute({ status: 'success', ...roadRoute });
+      } catch (error) {
+        if (error?.name === 'AbortError') return;
+        setComparisonRoadRoute({ status: 'failed', positions: [], durationMinutes: null });
+      }
+    }, 250);
+
+    return () => {
+      window.clearTimeout(requestTimer);
+      controller.abort();
+    };
+  }, [comparisonRouteKey, mapExpanded]);
+
+  const roadRouteLabelPosition = comparisonRoadRoute.status === 'success'
+    ? comparisonRoadRoute.positions[Math.floor(comparisonRoadRoute.positions.length / 2)]
+    : null;
 
   const getOrderMapTarget = (taskContext = assessmentTask) => {
     if (stationMapFocus?.source === 'order') return stationMapFocus;
@@ -5468,6 +5523,9 @@ export default function App() {
                 <ZoomControl position="bottomright" />
                 <MapResizeHandler dependency={`${sidebarExpanded}-${orderQueueOpen}-${orderQueueWidth}-${mapHeight}-${maximizedView}`} />
                 <MapFocusHandler request={mapFocusRequest} vehicles={initialVehicles} />
+                <RoadRouteFitHandler
+                  positions={comparisonRoadRoute.status === 'success' ? comparisonRoadRoute.positions : null}
+                />
                   {comparisonTarget?.position && (
                     <Marker position={comparisonTarget.position} icon={taskLocationMapIcon} zIndexOffset={9000}>
                       <LeafletTooltip direction="top" opacity={1} permanent={Boolean(comparisonTarget.label)} className="task-location-tooltip">
@@ -5477,22 +5535,22 @@ export default function App() {
                   )}
                   {comparisonVehicle && comparisonTarget?.position && (
                     <>
-                      <Polyline
-                        positions={[comparisonVehicle.position, comparisonTarget.position]}
-                        pathOptions={{ color: '#2f73c8', weight: 3, opacity: 0.82, dashArray: '7 7' }}
-                      />
-                      {isMovingToComparisonTarget && (
+                      {comparisonRoadRoute.status === 'success' && (
+                        <Polyline
+                          positions={comparisonRoadRoute.positions}
+                          pathOptions={{ color: '#2f73c8', weight: 4, opacity: 0.88 }}
+                        />
+                      )}
+                      {comparisonRoadRoute.status === 'failed' && (
+                        <Polyline
+                          positions={[comparisonVehicle.position, comparisonTarget.position]}
+                          pathOptions={{ color: '#2f73c8', weight: 3, opacity: 0.72, dashArray: '7 7' }}
+                        />
+                      )}
+                      {comparisonRoadRoute.status === 'success' && roadRouteLabelPosition && (
                         <Marker
-                          position={[
-                            (comparisonVehicle.position[0] + comparisonTarget.position[0]) / 2,
-                            (comparisonVehicle.position[1] + comparisonTarget.position[1]) / 2,
-                          ]}
-                          icon={createRouteLineLabelIcon(
-                            comparisonDistanceKm,
-                            Number.isFinite(comparisonEstimatedTravelMinutes)
-                              ? comparisonEstimatedTravelMinutes
-                              : null,
-                          )}
+                          position={roadRouteLabelPosition}
+                          icon={createRouteLineLabelIcon(comparisonRoadRoute.durationMinutes)}
                           interactive={false}
                           zIndexOffset={8500}
                         />

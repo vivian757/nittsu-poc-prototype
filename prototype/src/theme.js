@@ -27,6 +27,8 @@ export const appTheme = createTheme({
     fontFamily: 'Inter, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif',
     h5: { fontWeight: 750, letterSpacing: '-0.02em' },
     h6: { fontWeight: 700, letterSpacing: '-0.01em' },
+    panelTitle: { fontSize: '18px', fontWeight: 750, lineHeight: 1.4, letterSpacing: '-0.01em' },
+    sectionTitle: { fontSize: '16px', fontWeight: 700, lineHeight: 1.4 },
     subtitle1: { fontWeight: 650 },
     button: { fontWeight: 650, textTransform: 'none' },
     body2: { lineHeight: 1.55 },

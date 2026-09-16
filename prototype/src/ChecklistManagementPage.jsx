@@ -899,7 +899,7 @@ export default function ChecklistManagementPage() {
             onKeyDown={resizePanelWithKeyboard}
           />
           <Box className="checklist-detail-header">
-            <Typography id="checklist-detail-title" variant="h6">點呼表</Typography>
+            <Typography id="checklist-detail-title" variant="panelTitle" component="h6">點呼表</Typography>
             <Stack direction="row" spacing={0.25} alignItems="center" className="checklist-detail-header-actions">
               <IconButton size="small" onClick={() => setActiveId(null)} aria-label="關閉詳情"><CloseRounded /></IconButton>
             </Stack>
