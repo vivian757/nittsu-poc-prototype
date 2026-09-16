@@ -1815,26 +1815,15 @@ const getDriverAssignments = (driverName) => initialVehicles.flatMap((vehicle) =
 
 const findAvailableInsertionWindow = (task, driverName, vehicle) => {
   const taskWindow = getTaskWindowRange(task);
-  const durationHours = (Number.parseFloat(task.duration) || 60) / 60;
-  if (durationHours > taskWindow.end - taskWindow.start) return null;
-
   const occupiedRanges = [
     ...getDriverAssignments(driverName),
     ...vehicle.tasks,
-  ].sort((rangeA, rangeB) => rangeA.start - rangeB.start);
-  let candidateStart = taskWindow.start;
+  ];
+  const overlapsRequiredWindow = occupiedRanges.some((range) => (
+    range.end > taskWindow.start && range.start < taskWindow.end
+  ));
 
-  for (const occupiedRange of occupiedRanges) {
-    if (occupiedRange.end <= candidateStart) continue;
-    if (occupiedRange.start >= candidateStart + durationHours) break;
-    candidateStart = Math.max(candidateStart, occupiedRange.end);
-    if (candidateStart + durationHours > taskWindow.end) return null;
-  }
-
-  return {
-    start: candidateStart,
-    end: candidateStart + durationHours,
-  };
+  return overlapsRequiredWindow ? null : taskWindow;
 };
 
 const getCandidatePairId = (candidate) => `${candidate.taskId}-${candidate.vehicleId}-${candidate.driverName}`;
