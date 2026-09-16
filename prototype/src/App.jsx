@@ -4088,7 +4088,7 @@ function DriverReassignmentDialog({ open, impact, onClose, onForward }) {
           <Stack className="reassignment-dialog-title-copy" direction="row" spacing={1} alignItems="center">
             <WarningRounded className="reassignment-dialog-warning-icon" />
             <Box>
-              <Typography variant="subtitle1">銜接時間不足</Typography>
+              <Typography variant="subtitle1">插單後任務銜接時間不足</Typography>
               <Typography variant="caption">請確認是否需變更司機</Typography>
             </Box>
           </Stack>
