@@ -358,7 +358,7 @@ body.order-queue-resizing .order-queue-resize-handle::after { height: 72px; back
 .assessment-order-summary { position: relative; padding: 2px 34px 16px 2px; }
 .assessment-order-summary.reassignment { padding-right: 34px; }
 .assessment-order-summary::after { content: ''; position: absolute; right: -14px; bottom: 0; left: -14px; height: 1px; background: #e2e8ef; }
-.assessment-order-summary.reassignment .reassignment-task-vehicle { padding-right: 4px; font-size: 14px !important; }
+.assessment-order-summary.reassignment .reassignment-task-vehicle { padding-right: 4px; }
 .reassignment-resource-meta { margin-top: 8px; }
 .reassignment-resource-meta > .MuiStack-root { min-height: 20px; display: flex; align-items: center; }
 .reassignment-resource-meta svg { display: block; width: 16px; height: 16px; flex: 0 0 16px; align-self: center; color: #758397; }
@@ -444,7 +444,7 @@ body.order-queue-resizing .order-queue-resize-handle::after { height: 72px; back
 .reassignment-task-card { padding: 14px; border-color: #d8e2ed !important; background: #fff; }
 .reassignment-task-route { display: flex; align-items: center; gap: 0; color: #758397; font-size: 12px !important; line-height: 1.45 !important; }
 .reassignment-task-route b { margin-left: 8px; color: #526275; font-weight: 650; }
-.reassignment-task-vehicle { margin-top: 4px !important; color: #192434; font-size: 14px !important; font-weight: 700 !important; line-height: 1.4 !important; }
+.reassignment-task-vehicle { margin-top: 4px !important; color: #192434; font-weight: 700 !important; line-height: 1.4 !important; }
 .reassignment-task-time { display: flex; min-height: 20px; margin-top: 8px !important; align-items: center; gap: 6px; color: #526275; }
 .reassignment-task-time > svg { display: block; width: 16px; height: 16px; flex: 0 0 16px; align-self: center; color: #758397; }
 .reassignment-task-time .MuiTypography-root { display: flex; min-height: 20px; align-items: center; color: #526275; font-size: 14px; line-height: 20px; }

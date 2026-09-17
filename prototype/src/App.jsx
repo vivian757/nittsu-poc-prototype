@@ -4217,7 +4217,7 @@ function TaskPanel({ selectedTask, onDragStart, candidates, selectedDriverName, 
             <Box>
               {isDriverReassignment ? (
                 <>
-                  <Typography className="reassignment-task-vehicle" variant="subtitle2">
+                  <Typography className="reassignment-task-vehicle" variant="sectionTitle" component="h6">
                     {`路線 ${selectedTask.assignmentRoute ?? '-'} / 便次 ${assignmentTripLabel}`}
                   </Typography>
                   <Stack className="reassignment-resource-meta" spacing={0.5}>
